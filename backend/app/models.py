@@ -38,8 +38,8 @@ class NewspaperConfig(SQLModel, table=True):
         default_factory=list,
         sa_column=Column(ARRAY(sa.Text), nullable=False, server_default="{}"),
     )
-    created_at: datetime = Field(default_factory=now_utc)
-    updated_at: datetime = Field(default_factory=now_utc)
+    created_at: datetime = Field(default_factory=now_utc, sa_type=sa.DateTime(timezone=False))
+    updated_at: datetime = Field(default_factory=now_utc, sa_type=sa.DateTime(timezone=False))
 
     topics: list["Topic"] = Relationship(
         back_populates="config",
@@ -76,7 +76,7 @@ class RSSFeed(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     topic_id: uuid.UUID = Field(foreign_key="topics.id", index=True)
     url: str
-    last_polled_at: Optional[datetime] = Field(default=None)
+    last_polled_at: Optional[datetime] = Field(default=None, sa_type=sa.DateTime(timezone=False))
     last_etag: Optional[str] = Field(default=None)
     last_modified: Optional[str] = Field(default=None)
 
@@ -92,7 +92,7 @@ class NewsItem(SQLModel, table=True):
     title: Optional[str] = Field(default=None)
     summary: Optional[str] = Field(default=None, sa_column=Column(sa.Text))
     source_domain: Optional[str] = Field(default=None, index=True)
-    published_at: Optional[datetime] = Field(default=None, index=True)
+    published_at: Optional[datetime] = Field(default=None, index=True, sa_type=sa.DateTime(timezone=False))
     topic_id: Optional[uuid.UUID] = Field(default=None, foreign_key="topics.id")
     # How this item was discovered. Populated at insert time by the
     # ingester. Legacy rows stay null; the drops UI renders no source
@@ -106,7 +106,7 @@ class NewsItem(SQLModel, table=True):
         default=None,
         sa_column=Column(Vector(EMBED_DIM), nullable=True),
     )
-    fetched_at: datetime = Field(default_factory=now_utc)
+    fetched_at: datetime = Field(default_factory=now_utc, sa_type=sa.DateTime(timezone=False))
 
 
 class Issue(SQLModel, table=True):
@@ -122,7 +122,7 @@ class Issue(SQLModel, table=True):
     status: str = Field(default="pending", index=True)
     error: Optional[str] = Field(default=None, sa_column=Column(sa.Text))
     drafts_json: Optional[dict] = Field(default=None, sa_column=Column(JSONB, nullable=True))
-    created_at: datetime = Field(default_factory=now_utc)
+    created_at: datetime = Field(default_factory=now_utc, sa_type=sa.DateTime(timezone=False))
 
     config: Optional[NewspaperConfig] = Relationship(back_populates="issues")
     story_log: list["StoryLog"] = Relationship(
@@ -144,7 +144,7 @@ class StoryLog(SQLModel, table=True):
         default=None,
         sa_column=Column(Vector(EMBED_DIM), nullable=True),
     )
-    created_at: datetime = Field(default_factory=now_utc)
+    created_at: datetime = Field(default_factory=now_utc, sa_type=sa.DateTime(timezone=False))
 
     issue: Optional[Issue] = Relationship(back_populates="story_log")
 

@@ -47,6 +47,7 @@ def get_chat_llm() -> BaseChatModel:
         temperature=0.3,
         timeout=settings.llm_timeout_seconds,
         max_retries=settings.llm_max_retries,
+        reasoning_effort="none",  # required for gpt-5.6-luna
     )
 
 
