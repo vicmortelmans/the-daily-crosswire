@@ -64,6 +64,7 @@ LANG_MARKERS = {
     "it": ("il", "la", "dei", "delle", "che", "di"),
     "pt": ("o", "a", "os", "as", "que", "de"),
     "de": ("der", "die", "das", "und", "mit", "dass"),
+    "nl": ("de", "het", "een", "en", "van", "op", "in", "met", "dat", "door"),
 }
 
 

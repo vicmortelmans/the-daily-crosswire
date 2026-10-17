@@ -1,0 +1,988 @@
+/* ====================================================================
+   The Daily Crosswire newspaper stylesheet
+   ==================================================================== */
+
+:root {
+  --ink: #1a1a1a;
+  --ink-soft: #3a3a3a;
+  --paper: #f4efe3;
+  --paper-warm: #ece4d2;
+  --rule: #1a1a1a;
+  --accent: #8b1a1a;
+  --serif-display: "Playfair Display", "Times New Roman", serif;
+  --serif-body: "Source Serif 4", Georgia, serif;
+  --sans-cond: "Bebas Neue", "Oswald", "Impact", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #1b1a17;
+  color: var(--ink);
+  font-family: var(--serif-body);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- The paper sheet ---------- */
+.paper {
+  max-width: 1180px;
+  margin: 2.5rem auto;
+  padding: 3rem 3.25rem 2.5rem;
+  background: var(--paper);
+  background-image:
+    radial-gradient(circle at 20% 10%, rgba(0,0,0,0.02) 0, transparent 40%),
+    radial-gradient(circle at 80% 90%, rgba(0,0,0,0.02) 0, transparent 40%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05),
+    0 30px 60px -20px rgba(0,0,0,0.6),
+    0 18px 30px -12px rgba(0,0,0,0.4);
+  border: 1px solid #c9beab;
+  position: relative;
+}
+
+/* subtle paper grain */
+.paper::after {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.1  0 0 0 0 0.08  0 0 0 0 0.05  0 0 0 0.06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  mix-blend-mode: multiply;
+  opacity: 0.55;
+}
+
+/* ===================================================
+   MASTHEAD
+   =================================================== */
+.masthead {
+  text-align: center;
+  border-bottom: 4px double var(--rule);
+  padding-bottom: 0.75rem;
+}
+
+.edition-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--sans-cond);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+.edition-line .motto {
+  font-style: italic;
+  font-family: var(--serif-body);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-soft);
+}
+.clock {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+.nameplate {
+  font-family: var(--serif-display);
+  font-weight: 900;
+  font-size: clamp(3.25rem, 7.5vw, 5.8rem);
+  letter-spacing: -0.015em;
+  line-height: 0.95;
+  margin: 0.4rem 0 0.55rem;
+  /* optical title variant */
+  font-variant-ligatures: common-ligatures discretionary-ligatures;
+}
+
+.date-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.45rem 0.1rem;
+  font-family: var(--sans-cond);
+  font-size: 0.9rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.date-bar .weather {
+  color: var(--ink-soft);
+  font-family: var(--serif-body);
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.print-btn {
+  font: inherit;
+  font-family: var(--sans-cond);
+  letter-spacing: 0.1em;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+}
+.print-btn:hover { text-decoration: underline; }
+
+/* ===================================================
+   HERO DECK
+   =================================================== */
+.deck {
+  text-align: center;
+  padding: 1.25rem 0 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 1.5rem;
+}
+.kicker {
+  display: inline-block;
+  font-family: var(--sans-cond);
+  font-size: 0.8rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  padding: 0.15rem 0.5rem;
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+  margin-bottom: 0.6rem;
+}
+.kicker-red { color: var(--accent); border-color: var(--accent); }
+
+.hed {
+  font-family: var(--serif-display);
+  font-weight: 700;
+  font-size: 1.6rem;
+  line-height: 1.12;
+  letter-spacing: -0.005em;
+  margin: 0.25rem 0 0.5rem;
+}
+.hed-hero {
+  font-size: clamp(2rem, 3.6vw, 3rem);
+  font-weight: 900;
+  line-height: 1.02;
+  letter-spacing: -0.015em;
+  max-width: 22ch;
+  margin: 0.35rem auto 0.7rem;
+}
+.hed-small { font-size: 1.2rem; }
+.hed-ed {
+  font-style: italic;
+  font-weight: 700;
+  font-size: 1.4rem;
+}
+
+.subhed {
+  font-family: var(--serif-body);
+  font-style: italic;
+  font-size: 1.05rem;
+  color: var(--ink-soft);
+  max-width: 60ch;
+  margin: 0 auto;
+}
+
+/* ===================================================
+   BROADSHEET GRID
+   =================================================== */
+.broadsheet {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.75rem;
+  column-rule: 1px solid var(--rule);
+  position: relative;
+}
+
+/* Screen: the wrapper is transparent so its children participate in the grid */
+.col-group { display: contents; }
+
+/* Vertical rules between columns */
+.broadsheet .col + .col {
+  border-left: 1px solid var(--rule);
+  padding-left: 1.75rem;
+}
+.broadsheet .col + .col::before { content: none; }
+
+.col { min-width: 0; }
+
+.lead-story {
+  grid-column: span 2;
+}
+
+.byline {
+  font-family: var(--sans-cond);
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0.1rem 0 0.9rem;
+}
+
+.col p {
+  margin: 0 0 0.75rem;
+  text-align: justify;
+  hyphens: auto;
+}
+
+.col p:first-of-type { text-indent: 0; }
+.col p + p { text-indent: 1.25em; }
+
+/* Dropcap on lead */
+.dropcap {
+  float: left;
+  font-family: var(--serif-display);
+  font-weight: 900;
+  font-size: 3.6rem;
+  line-height: 0.88;
+  padding: 0.35rem 0.55rem 0 0;
+  color: var(--ink);
+}
+
+/* Illustrations */
+.illus {
+  margin: 0 0 0.9rem;
+  border: 1px solid var(--rule);
+  background: var(--paper-warm);
+}
+.illus svg { display: block; width: 100%; height: auto; }
+.illus figcaption {
+  font-family: var(--serif-body);
+  font-style: italic;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  padding: 0.35rem 0.6rem;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+}
+.illus-small {
+  max-width: 220px;
+  margin-top: 1rem;
+}
+
+/* Pull quote */
+.pullquote {
+  font-family: var(--serif-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.15rem;
+  line-height: 1.3;
+  color: var(--ink);
+  border-top: 2px solid var(--rule);
+  border-bottom: 2px solid var(--rule);
+  padding: 0.85rem 0;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+/* Editorial column */
+.editorial {
+  background: var(--paper-warm);
+  padding: 1.1rem 1.2rem !important;
+  border: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+}
+.editorial .kicker { color: var(--accent); border-color: var(--accent); }
+
+/* Briefs */
+.brief-list { margin: 0; padding: 0; }
+.brief-list dt {
+  font-family: var(--sans-cond);
+  font-size: 0.88rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--rule);
+}
+.brief-list dt:first-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+.brief-list dd {
+  margin: 0.2rem 0 0;
+  font-size: 0.93rem;
+  line-height: 1.4;
+}
+
+/* ===================================================
+   SECTION RULE
+   =================================================== */
+.section-rule {
+  border: none;
+  border-top: 1px solid var(--rule);
+  border-bottom: 4px double var(--rule);
+  margin: 2.25rem 0 1.75rem;
+  height: 6px;
+}
+
+/* ===================================================
+   SECOND BAND: editorial's full-width broadsheet
+   Overrides the 4-column grid from .broadsheet so the single editorial
+   aside spans the full width rather than taking one column with blank
+   space to the right. Kept out of any .col-group on purpose: in print
+   .col-group is `columns: 3`, which was splitting the editorial across
+   columns and pages.
+   =================================================== */
+.second-band {
+  display: block;
+  margin-top: 0;
+}
+
+/* ===================================================
+   COLOPHON / SOURCES
+   =================================================== */
+.colophon {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.88rem;
+}
+.colophon h4 {
+  font-family: var(--sans-cond);
+  font-size: 1.1rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin: 0 0 0.5rem;
+}
+.colophon-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+.sources {
+  margin: 0;
+  padding-left: 1.1rem;
+  columns: 1;
+}
+.sources li { margin-bottom: 0.25rem; }
+.sources a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--ink-soft);
+  text-underline-offset: 2px;
+}
+.sources a:hover { color: var(--accent); }
+
+.imprint {
+  text-align: center;
+  font-family: var(--sans-cond);
+  font-size: 0.78rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--rule);
+  padding-top: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.small { font-size: 0.82rem; color: var(--ink-soft); font-style: italic; }
+
+.small-note {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* ===================================================
+   RESPONSIVE
+   =================================================== */
+@media (max-width: 960px) {
+  .paper { padding: 1.75rem 1.5rem; margin: 1rem; }
+  .broadsheet {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+  }
+  .broadsheet .col + .col {
+    border-left: none;
+    padding-left: 0;
+  }
+  .broadsheet .col + .col {
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+  }
+  .lead-story { grid-column: span 2; }
+  .colophon-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .broadsheet { grid-template-columns: 1fr; }
+  .lead-story { grid-column: span 1; }
+  .edition-line, .date-bar { flex-direction: column; gap: 0.2rem; }
+}
+
+/* ===================================================
+   GAMES PAGE  (Page 3)
+   =================================================== */
+
+.games-page {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 4px double var(--rule);
+}
+
+.games-masthead {
+  text-align: center;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.games-line-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--sans-cond);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 0.75rem;
+}
+
+.games-title {
+  font-family: var(--serif-display);
+  font-weight: 900;
+  font-size: clamp(2.2rem, 5vw, 3.6rem);
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+  margin: 0.3rem 0 0.5rem;
+}
+
+.games-sub {
+  font-family: var(--serif-body);
+  font-style: italic;
+  color: var(--ink-soft);
+  margin: 0 auto;
+  max-width: 60ch;
+}
+
+.games-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.75rem;
+}
+
+.puzzle {
+  border: 1px solid var(--rule);
+  padding: 1rem 1.1rem 1.1rem;
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.puzzle .kicker {
+  margin-bottom: 0.4rem;
+  align-self: flex-start;
+}
+
+.puzzle-title {
+  font-family: var(--serif-display);
+  font-weight: 700;
+  font-size: 1.35rem;
+  margin: 0.2rem 0 0.4rem;
+  letter-spacing: -0.005em;
+}
+
+.puzzle-note {
+  font-family: var(--serif-body);
+  font-style: italic;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  margin: 0 0 0.9rem;
+}
+
+.puzzle-meta {
+  font-family: var(--sans-cond);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0.7rem 0 0;
+}
+
+/* ----- Sudoku ----- */
+.sudoku {
+  border-collapse: collapse;
+  font-family: var(--serif-body);
+  font-size: 1.05rem;
+  line-height: 1;
+  margin: 0 auto;
+  border: 2px solid var(--rule);
+}
+.sudoku td {
+  width: 2.1rem;
+  height: 2.1rem;
+  text-align: center;
+  vertical-align: middle;
+  border: 1px solid var(--ink-soft);
+  padding: 0;
+  font-weight: 500;
+}
+.sudoku td.band-top   { border-top:  2px solid var(--rule); }
+.sudoku td.band-left  { border-left: 2px solid var(--rule); }
+
+/* ----- Fill-in (criss-cross) ----- */
+.fillin {
+  border-collapse: collapse;
+  margin: 0 auto 0.8rem;
+}
+.fillin td {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+  font-family: var(--serif-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.fillin .fi-empty {
+  /* Unused cell: fully invisible. The adjacent fi-cell borders draw
+     the grid shape on their own. */
+  background: transparent;
+  border: none;
+}
+.fillin .fi-cell {
+  background: #ffffff;
+  border: 1px solid var(--rule);
+}
+.fillin .fi-anchor {
+  background: #ffffff;
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.fi-wordlist {
+  width: 100%;
+  border-top: 1px solid var(--rule);
+  padding-top: 0.5rem;
+  margin-top: 0.3rem;
+  font-family: var(--serif-body);
+  font-size: 0.86rem;
+}
+.fi-group {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  margin-bottom: 0.25rem;
+  line-height: 1.35;
+}
+.fi-len {
+  font-family: var(--sans-cond);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  min-width: 5.2rem;
+  flex-shrink: 0;
+}
+
+/* ----- Word search ----- */
+.wordsearch-wrap {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  width: 100%;
+}
+.wordsearch {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  border: 1.5px solid var(--rule);
+}
+.wordsearch td {
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+.wordsearch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--sans-cond);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  columns: 1;
+}
+.wordsearch-list li {
+  padding: 0.15rem 0;
+  border-bottom: 1px dotted var(--ink-soft);
+}
+
+/* ----- Maze ----- */
+.maze-svg {
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+  display: block;
+  margin: 0 auto;
+}
+
+/* ----- SOS (2-player pencil game) ----- */
+.sos {
+  border-collapse: collapse;
+  margin: 0 auto;
+  border: 2px solid var(--rule);
+  background: #ffffff;
+}
+.sos td {
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid var(--rule);
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+  font-family: var(--serif-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  background: #ffffff;
+}
+.sos .sos-given {
+  color: var(--accent);
+}
+
+/* ----- Cryptogram ----- */
+.crypto-encoded {
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: 0.9rem 0.5rem;
+  margin: 0.3rem 0 0.8rem;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  word-spacing: 0.4rem;
+  line-height: 1.6;
+}
+.crypto-hints {
+  font-family: var(--serif-body);
+  font-size: 0.88rem;
+  text-align: center;
+  margin: 0;
+}
+.crypto-hint {
+  display: inline-block;
+  font-family: var(--mono);
+  background: var(--paper-warm);
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--rule);
+  letter-spacing: 0.05em;
+}
+
+.games-footer {
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+  text-align: center;
+}
+.games-footer code {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+/* Games responsive (screen) */
+@media (max-width: 760px) {
+  .games-grid { grid-template-columns: 1fr; }
+  .wordsearch-wrap { flex-direction: column; align-items: center; }
+}
+
+/* ===================================================
+   PRINT
+   =================================================== */
+@media print {
+  /* Default @page is the tight (6mm) layout used by the games section
+     AND by the body/html scope. News content is lifted onto a named
+     @page with wider margins via the `.paper > :not(.games-page)` rule
+     below. We inverted the obvious (named = games, default = news)
+     because Chrome spawns a trailing blank page when it has to unwind
+     from a named @page back to the default @page at end of document.
+     Making games share the default @page means games → end of body has
+     no page-type transition and no blank trailing page. */
+  @page { size: letter; margin: 6mm; }
+  @page news-page { size: letter; margin: 10mm; }
+  .paper > :not(.games-page) { page: news-page; }
+
+  html, body {
+    background: #fff;
+    font-size: 10.5pt;
+    line-height: 1.35;
+  }
+
+  .paper {
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+    border: none;
+    max-width: none;
+    background: #fff;
+  }
+  .paper::after { display: none; }
+  .print-btn, .clock { display: none; }
+
+  /* Compact masthead for print */
+  .masthead { padding-bottom: 0.35rem; }
+  .edition-line { font-size: 0.62rem; padding-bottom: 0.2rem; }
+  .nameplate {
+    font-size: 3.2rem;
+    margin: 0.15rem 0 0.2rem;
+  }
+  .date-bar {
+    font-size: 0.7rem;
+    padding: 0.25rem 0;
+  }
+  .date-bar .weather { font-size: 0.75rem; }
+
+  /* Tight hero deck */
+  .deck {
+    padding: 0.5rem 0 0.4rem;
+    margin-bottom: 0.6rem;
+    text-align: center;
+  }
+  .hed-hero {
+    font-size: 1.55rem;
+    max-width: 32ch;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    text-align: center;
+  }
+  .subhed { font-size: 0.85rem; text-align: center; }
+  .kicker { font-size: 0.62rem; padding: 0.08rem 0.4rem; }
+
+  /* --- KEY FIX: restructure print layout ---
+     .broadsheet becomes a plain block container.
+     .lead-story is its own block with internal 2-column flow.
+     .col-group takes over the multi-column job for the other articles.
+  */
+  .broadsheet {
+    display: block;
+    grid-template-columns: none;
+    gap: 0;
+  }
+
+  /* Lead story: full-width block, internal 2-col text */
+  .lead-story {
+    display: block;
+    columns: 2;
+    column-gap: 6mm;
+    column-rule: 1px solid var(--rule);
+    margin: 0 0 0.75rem !important;
+    padding: 0 0 0.5rem !important;
+    border-bottom: 1px solid var(--rule) !important;
+    border-left: none !important;
+    break-inside: avoid;
+  }
+
+  /* Column flow for the remaining articles */
+  .col-group {
+    display: block;
+    columns: 3;
+    column-gap: 6mm;
+    column-rule: 1px solid var(--rule);
+  }
+
+  .col-group > article,
+  .col-group > aside {
+    display: block;
+    margin: 0 0 0.55rem !important;
+    padding: 0 !important;
+    border: none !important;
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Keep headings with their body */
+  .kicker, .hed, .byline { break-after: avoid; }
+  .illus { break-inside: avoid; }
+
+  /* Keep figures and headings tight */
+  .illus {
+    break-inside: avoid;
+    margin: 0 0 0.4rem;
+  }
+  .illus svg { max-height: 110px; }
+  .illus-small { max-width: 160px; }
+  .illus figcaption { font-size: 0.7rem; padding: 0.2rem 0.4rem; }
+
+  .hed { font-size: 1.05rem; margin: 0.15rem 0 0.25rem; }
+  .hed-small { font-size: 0.95rem; }
+  .hed-ed { font-size: 0.95rem; }
+  .byline { font-size: 0.62rem; margin: 0 0 0.35rem; letter-spacing: 0.14em; }
+
+  .col p { margin: 0 0 0.35rem; font-size: 10pt; }
+  .dropcap {
+    font-size: 2.8rem;
+    line-height: 0.85;
+    padding: 0.25rem 0.4rem 0 0;
+  }
+
+  .pullquote {
+    font-size: 0.95rem;
+    padding: 0.4rem 0;
+    margin: 0.5rem 0;
+  }
+
+  .broadsheet .editorial {
+    background: #f0e9d6 !important;
+    padding: 0.45rem 0.55rem !important;
+    border: 1px solid var(--rule) !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .small-note {
+    font-size: 0.75rem !important;
+    font-style: italic;
+    color: var(--ink-soft);
+  }
+
+  .brief-list dt { font-size: 0.72rem; margin-top: 0.35rem; padding-top: 0.3rem; }
+  .brief-list dd { font-size: 0.78rem; line-height: 1.3; }
+
+  .section-rule { margin: 0.75rem 0 0.65rem; }
+
+  /* Colophon: compact, single-row */
+  .colophon { font-size: 0.72rem; margin-top: 0.5rem; padding-top: 0.4rem; }
+  .colophon-grid { gap: 0.75rem; }
+  .colophon h4 { font-size: 0.8rem; margin-bottom: 0.25rem; }
+  .sources li { margin-bottom: 0.1rem; }
+  .imprint { font-size: 0.6rem; padding-top: 0.4rem; margin-top: 0.5rem; }
+
+  /* Ensure links stay readable */
+  a { color: var(--ink); text-decoration: underline; }
+
+  /* ----- Games page: starts on its own page, force single-page fit,
+     and force white backgrounds everywhere (save ink). ----- */
+  .games-page {
+    break-before: page;
+    page-break-before: always;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    background: #fff !important;
+  }
+  .puzzle { background: #fff !important; }
+  .games-masthead { padding-bottom: 0.35rem; margin-bottom: 0.55rem; }
+  .games-line-top { font-size: 0.62rem; padding-bottom: 0.22rem; margin-bottom: 0.28rem; }
+  .games-title { font-size: 1.85rem; margin: 0.06rem 0 0.18rem; }
+  .games-sub { font-size: 0.8rem; }
+
+  /* 2-col grid, bigger gap now that we have more space to breathe. */
+  .games-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.55rem !important;
+  }
+
+  .puzzle {
+    padding: 0.55rem 0.65rem 0.55rem;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .puzzle .kicker { font-size: 0.62rem; margin-bottom: 0.12rem; padding: 0.05rem 0.3rem; }
+  .puzzle-title { font-size: 1.02rem; margin: 0.08rem 0 0.15rem; line-height: 1.1; }
+  .puzzle-note { font-size: 0.72rem; margin: 0 0 0.42rem; line-height: 1.25; }
+  .puzzle-meta { font-size: 0.6rem; margin-top: 0.22rem; }
+
+  /* Sudoku: bigger grid + bigger digits. */
+  .sudoku { font-size: 0.88rem; }
+  .sudoku td { width: 1.5rem; height: 1.5rem; }
+
+  /* Criss-cross: unused cells print as nothing. Used cells are plain
+     white with thin black borders: clean, ink-friendly, and lets the
+     negative space show through where there's no word.
+     Borders are 1px solid #000 rather than 0.5px: sub-pixel widths
+     antialias to grey on print and make the whole grid look dingy. */
+  .fillin {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .fillin td { width: 0.98rem; height: 0.98rem; font-size: 0.78rem; }
+  .fillin .fi-empty {
+    background: transparent !important;
+    border: none !important;
+  }
+  .fillin .fi-cell {
+    background: #fff !important;
+    border: 1px solid #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .fillin .fi-anchor {
+    background: #fff !important;
+    border: 1px solid #000 !important;
+    color: #000 !important;
+    font-weight: 800;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .fi-wordlist { font-size: 0.74rem; padding-top: 0.26rem; margin-top: 0.18rem; }
+  .fi-group { margin-bottom: 0.16rem; line-height: 1.25; }
+  .fi-len { font-size: 0.62rem; min-width: 4.2rem; }
+
+  /* FIX 3: Word search: grid + list side-by-side in print too. */
+  .wordsearch-wrap {
+    flex-direction: row !important;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+  .wordsearch { font-size: 0.68rem; }
+  .wordsearch td { width: 0.9rem; height: 0.9rem; }
+  .wordsearch-list {
+    font-size: 0.68rem;
+    columns: 1;
+    flex-shrink: 0;
+    min-width: 4.8rem;
+  }
+  .wordsearch-list li { padding: 0.05rem 0; }
+
+  /* Maze */
+  .maze-svg { max-height: 130px; }
+
+  /* SOS */
+  .sos {
+    border: 1.2px solid #000 !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sos td {
+    width: 1.65rem;
+    height: 1.65rem;
+    border: 1px solid #000 !important;
+    background: #fff !important;
+    font-size: 1.0rem;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sos .sos-given { color: #8b1a1a !important; }
+
+  /* Cryptogram */
+  .crypto-encoded { font-size: 0.88rem; padding: 0.42rem 0.3rem; margin: 0.12rem 0 0.4rem; line-height: 1.4; word-spacing: 0.32rem; }
+  .crypto-hints { font-size: 0.74rem; }
+  .crypto-hint { font-size: 0.74rem; padding: 0.06rem 0.3rem; background: #fff !important; }
+
+  .games-footer { margin-top: 0.4rem; padding-top: 0.3rem; }
+  .games-footer p { font-size: 0.6rem; }
+
+  /* Ensure backgrounds we DO want (paper-warm editorial in the main paper) print */
+  .editorial, .sudoku td, .puzzle {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

@@ -28,7 +28,7 @@ class NewspaperConfig(SQLModel, table=True):
     include_puzzles: bool = Field(default=True)
     active: bool = Field(default=True)
     max_stories_per_topic: Optional[int] = Field(default=None)
-    # ISO 639-1 code: "en", "es", "fr", "it", "pt", "de". Drives draft +
+    # ISO 639-1 code: "en", "es", "fr", "it", "pt", "de", "nl". Drives draft +
     # editorial output language and template string localization.
     language: str = Field(default="en")
     # Email addresses that receive a PDF of the generated issue after

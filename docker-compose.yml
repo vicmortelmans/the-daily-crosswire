@@ -45,6 +45,8 @@ services:
       - ./issues:/app/issues
     ports:
       - "8001:8000"
+    extra_hosts:
+        - host.docker.internal:host-gateway
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   ui:

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="{{ language or 'en' }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ paper_name }} · {{ issue_date_pretty }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&family=Bebas+Neue&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main class="paper">
+
+  <header class="masthead">
+    <div class="edition-line">
+      <span>{{ strings.vol }} {{ volume }} &middot; {{ strings.no }} {{ number }}</span>
+      <span class="motto">&mdash; {{ paper_name }} &mdash;</span>
+      <span class="clock">{{ generated_time_short }}</span>
+    </div>
+    <h1 class="nameplate">{{ paper_name }}</h1>
+    <div class="date-bar">
+      <span>{{ issue_date_pretty }}</span>
+      <span class="weather">{{ topic_list }}</span>
+      <span>{{ strings.city_edition }} &middot; <button class="print-btn" onclick="window.print()" aria-label="{{ strings.print }}">{{ strings.print }}&nbsp;&rArr;</button></span>
+    </div>
+  </header>
+
+  {% if hero %}
+  <section class="deck">
+    <span class="kicker">{{ hero.topic_name }} &middot; {{ strings.lead }}</span>
+    <h2 class="hed hed-hero">{{ hero.rendered_title }}</h2>
+    {% if hero.body %}
+    {% set first_dot = hero.body.find('. ') %}
+    <p class="subhed">{{ hero.body if first_dot == -1 else hero.body[:first_dot + 1] }}</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% for beat in beats %}
+  {% if not loop.first %}<hr class="section-rule" />{% endif %}
+  <section class="broadsheet" data-topic="{{ beat.topic_name }}">
+    {% set lead = beat.lead %}
+    {% if lead %}
+    <article class="col lead-story">
+      <span class="kicker">{{ beat.topic_name }}</span>
+      <h3 class="hed">{{ lead.rendered_title }}</h3>
+      <p class="byline">{{ strings.by }} {{ strings.desk_wire }} &middot; {{ beat.topic_name }}</p>
+      {% if lead.body %}
+      <p><span class="dropcap">{{ lead.body[0] }}</span>{{ lead.body[1:] }}</p>
+      {% endif %}
+      {% if lead.original_url %}
+      <p class="small-note">{{ strings.source }}: <a href="{{ lead.original_url }}" target="_blank" rel="noopener">{{ lead.source_domain or "link" }}</a></p>
+      {% endif %}
+    </article>
+    {% endif %}
+
+    {% if beat.stories %}
+    <div class="col-group">
+      {% for story in beat.stories %}
+      <article class="col">
+        <span class="kicker">{{ beat.topic_name }}</span>
+        <h3 class="hed">{{ story.rendered_title }}</h3>
+        <p class="byline">{{ strings.by }} {{ strings.desk_wire }} &middot; {{ beat.topic_name }}</p>
+        {% if story.body %}
+        <p>{{ story.body }}</p>
+        {% endif %}
+        {% if story.original_url %}
+        <p class="small-note">{{ strings.source }}: <a href="{{ story.original_url }}" target="_blank" rel="noopener">{{ story.source_domain or "link" }}</a></p>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  {# Editorial always sits in its own full-width broadsheet below the beats.
+     Keeping it out of any .col-group avoids the multi-column split that
+     broke the editorial across columns and pages in print (print sets
+     .col-group to `columns: 3`). #}
+  {% if editorial %}
+  <hr class="section-rule" />
+  <section class="broadsheet second-band">
+    <aside class="col editorial">
+      <span class="kicker kicker-red">{{ strings.editorial_kicker }}</span>
+      <h3 class="hed hed-ed">{{ strings.editorial_title }} &middot; {{ issue_date_pretty }}</h3>
+      <p class="byline">{{ strings.the_editor }}</p>
+      <p>{{ editorial }}</p>
+    </aside>
+  </section>
+  {% endif %}
+
+  <hr class="section-rule" />
+  <section class="colophon">
+    {# Operational metadata: intentionally always English. These are
+       backend tracking fields (seed, UTC timestamp, lookback window),
+       not reader content, so translating them adds noise. #}
+    <p class="small-note">
+      Issue seed: {{ issue_id_short }} &middot; Generated {{ generated_at_pretty }} &middot;
+      Lookback: {{ lookback_start }} &rarr; {{ lookback_end }}
+    </p>
+  </section>
+
+  {% if puzzles_html %}
+  <!-- GAMES_PAGE_START -->
+  {{ puzzles_html|safe }}
+  <!-- GAMES_PAGE_END -->
+  {% endif %}
+
+  </main>
+
+</body>
+</html>

@@ -702,25 +702,15 @@ html, body {
 }
 
 /* ===================================================
-   PRINT
+   PRINT (Continuous 5-Column Old-School Layout)
    =================================================== */
 @media print {
-  /* Default @page is the tight (6mm) layout used by the games section
-     AND by the body/html scope. News content is lifted onto a named
-     @page with wider margins via the `.paper > :not(.games-page)` rule
-     below. We inverted the obvious (named = games, default = news)
-     because Chrome spawns a trailing blank page when it has to unwind
-     from a named @page back to the default @page at end of document.
-     Making games share the default @page means games → end of body has
-     no page-type transition and no blank trailing page. */
-  @page { size: letter; margin: 6mm; }
-  @page news-page { size: letter; margin: 10mm; }
-  .paper > :not(.games-page) { page: news-page; }
+  @page { size: a3 portrait; margin: 10mm; }
 
   html, body {
     background: #fff;
-    font-size: 10.5pt;
-    line-height: 1.35;
+    font-size: 9.5pt;
+    line-height: 1.3;
   }
 
   .paper {
@@ -730,259 +720,99 @@ html, body {
     border: none;
     max-width: none;
     background: #fff;
+    /* Stream the entire paper layout into 5 continuous columns */
+    columns: 5;
+    column-gap: 6mm;
+    column-rule: 1px solid var(--rule);
   }
+
   .paper::after { display: none; }
   .print-btn, .clock { display: none; }
 
-  /* Compact masthead for print */
-  .masthead { padding-bottom: 0.35rem; }
-  .edition-line { font-size: 0.62rem; padding-bottom: 0.2rem; }
-  .nameplate {
-    font-size: 3.2rem;
-    margin: 0.15rem 0 0.2rem;
-  }
-  .date-bar {
-    font-size: 0.7rem;
-    padding: 0.25rem 0;
-  }
-  .date-bar .weather { font-size: 0.75rem; }
-
-  /* Tight hero deck */
-  .deck {
-    padding: 0.5rem 0 0.4rem;
-    margin-bottom: 0.6rem;
-    text-align: center;
-  }
-  .hed-hero {
-    font-size: 1.55rem;
-    max-width: 32ch;
-    margin-left: auto !important;
-    margin-right: auto !important;
-    text-align: center;
-  }
-  .subhed { font-size: 0.85rem; text-align: center; }
-  .kicker { font-size: 0.62rem; padding: 0.08rem 0.4rem; }
-
-  /* --- KEY FIX: restructure print layout ---
-     .broadsheet becomes a plain block container.
-     .lead-story is its own block with internal 2-column flow.
-     .col-group takes over the multi-column job for the other articles.
-  */
-  .broadsheet {
-    display: block;
-    grid-template-columns: none;
-    gap: 0;
-  }
-
-  /* Lead story: full-width block, internal 2-col text */
-  .lead-story {
-    display: block;
-    columns: 2;
-    column-gap: 6mm;
-    column-rule: 1px solid var(--rule);
-    margin: 0 0 0.75rem !important;
-    padding: 0 0 0.5rem !important;
-    border-bottom: 1px solid var(--rule) !important;
-    border-left: none !important;
+  /* Structural elements that must span across all 5 columns */
+  .masthead, 
+  .games-page {
+    column-span: all;
     break-inside: avoid;
   }
 
-  /* Column flow for the remaining articles */
-  .col-group {
-    display: block;
-    columns: 3;
-    column-gap: 6mm;
-    column-rule: 1px solid var(--rule);
+  /* Remove grid/block constraints so articles and paragraphs flow sequentially */
+  .col, 
+  .broadsheet, 
+  .deck, 
+  .section-rule, 
+  .second-band, 
+  .colophon, 
+  .lead-story, 
+  .col-group,
+  .col-group > article, 
+  .col-group > aside {
+    display: contents;
   }
 
-  .col-group > article,
-  .col-group > aside {
-    display: block;
-    margin: 0 0 0.55rem !important;
-    padding: 0 !important;
-    border: none !important;
+  /* Ensure individual story headings and paragraphs stay neat */
+  .col .kicker,
+  .col .hed,
+  .col .byline {
+    break-after: avoid;
+  }
+
+  .col p {
+    margin: 0 0 0.4rem;
+    font-size: 9pt;
+    text-align: justify;
     orphans: 3;
     widows: 3;
   }
 
-  /* Keep headings with their body */
-  .kicker, .hed, .byline { break-after: avoid; }
-  .illus { break-inside: avoid; }
-
-  /* Keep figures and headings tight */
-  .illus {
-    break-inside: avoid;
-    margin: 0 0 0.4rem;
-  }
-  .illus svg { max-height: 110px; }
-  .illus-small { max-width: 160px; }
-  .illus figcaption { font-size: 0.7rem; padding: 0.2rem 0.4rem; }
-
-  .hed { font-size: 1.05rem; margin: 0.15rem 0 0.25rem; }
-  .hed-small { font-size: 0.95rem; }
-  .hed-ed { font-size: 0.95rem; }
-  .byline { font-size: 0.62rem; margin: 0 0 0.35rem; letter-spacing: 0.14em; }
-
-  .col p { margin: 0 0 0.35rem; font-size: 10pt; }
-  .dropcap {
+  /* Typography and spacing adjustments */
+  .nameplate {
     font-size: 2.8rem;
-    line-height: 0.85;
-    padding: 0.25rem 0.4rem 0 0;
+    margin: 0.1rem 0;
+  }
+  
+  .hed { font-size: 0.95rem; margin: 0.4rem 0 0.15rem; }
+  .hed-hero { font-size: 1.3rem; max-width: none; }
+  .subhed { font-size: 0.8rem; }
+  .kicker { font-size: 0.58rem; padding: 0.05rem 0.3rem; margin-top: 0.4rem; }
+  .byline { font-size: 0.58rem; margin: 0 0 0.25rem; }
+
+  .dropcap {
+    font-size: 2.4rem;
+    padding: 0.2rem 0.35rem 0 0;
   }
 
   .pullquote {
-    font-size: 0.95rem;
-    padding: 0.4rem 0;
-    margin: 0.5rem 0;
+    font-size: 0.85rem;
+    padding: 0.3rem 0;
+    margin: 0.4rem 0;
+    break-inside: avoid;
+    column-span: none;
   }
 
-  .broadsheet .editorial {
+  .editorial {
     background: #f0e9d6 !important;
-    padding: 0.45rem 0.55rem !important;
+    padding: 0.5rem !important;
     border: 1px solid var(--rule) !important;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
-  .small-note {
-    font-size: 0.75rem !important;
-    font-style: italic;
-    color: var(--ink-soft);
-  }
-
-  .brief-list dt { font-size: 0.72rem; margin-top: 0.35rem; padding-top: 0.3rem; }
-  .brief-list dd { font-size: 0.78rem; line-height: 1.3; }
-
-  .section-rule { margin: 0.75rem 0 0.65rem; }
-
-  /* Colophon: compact, single-row */
-  .colophon { font-size: 0.72rem; margin-top: 0.5rem; padding-top: 0.4rem; }
-  .colophon-grid { gap: 0.75rem; }
-  .colophon h4 { font-size: 0.8rem; margin-bottom: 0.25rem; }
-  .sources li { margin-bottom: 0.1rem; }
-  .imprint { font-size: 0.6rem; padding-top: 0.4rem; margin-top: 0.5rem; }
-
-  /* Ensure links stay readable */
-  a { color: var(--ink); text-decoration: underline; }
-
-  /* ----- Games page: starts on its own page, force single-page fit,
-     and force white backgrounds everywhere (save ink). ----- */
-  .games-page {
-    break-before: page;
-    page-break-before: always;
-    margin-top: 0;
-    padding-top: 0;
-    border-top: none;
-    background: #fff !important;
-  }
-  .puzzle { background: #fff !important; }
-  .games-masthead { padding-bottom: 0.35rem; margin-bottom: 0.55rem; }
-  .games-line-top { font-size: 0.62rem; padding-bottom: 0.22rem; margin-bottom: 0.28rem; }
-  .games-title { font-size: 1.85rem; margin: 0.06rem 0 0.18rem; }
-  .games-sub { font-size: 0.8rem; }
-
-  /* 2-col grid, bigger gap now that we have more space to breathe. */
+  /* Games section formatting adjustments for print */
   .games-grid {
-    grid-template-columns: 1fr 1fr !important;
-    gap: 0.55rem !important;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 0.4rem !important;
   }
-
   .puzzle {
-    padding: 0.55rem 0.65rem 0.55rem;
+    padding: 0.4rem;
+    background: #fff !important;
     break-inside: avoid;
-    page-break-inside: avoid;
   }
-  .puzzle .kicker { font-size: 0.62rem; margin-bottom: 0.12rem; padding: 0.05rem 0.3rem; }
-  .puzzle-title { font-size: 1.02rem; margin: 0.08rem 0 0.15rem; line-height: 1.1; }
-  .puzzle-note { font-size: 0.72rem; margin: 0 0 0.42rem; line-height: 1.25; }
-  .puzzle-meta { font-size: 0.6rem; margin-top: 0.22rem; }
-
-  /* Sudoku: bigger grid + bigger digits. */
-  .sudoku { font-size: 0.88rem; }
-  .sudoku td { width: 1.5rem; height: 1.5rem; }
-
-  /* Criss-cross: unused cells print as nothing. Used cells are plain
-     white with thin black borders: clean, ink-friendly, and lets the
-     negative space show through where there's no word.
-     Borders are 1px solid #000 rather than 0.5px: sub-pixel widths
-     antialias to grey on print and make the whole grid look dingy. */
-  .fillin {
-    background: #fff !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .fillin td { width: 0.98rem; height: 0.98rem; font-size: 0.78rem; }
-  .fillin .fi-empty {
-    background: transparent !important;
-    border: none !important;
-  }
-  .fillin .fi-cell {
-    background: #fff !important;
-    border: 1px solid #000 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .fillin .fi-anchor {
-    background: #fff !important;
-    border: 1px solid #000 !important;
-    color: #000 !important;
-    font-weight: 800;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .fi-wordlist { font-size: 0.74rem; padding-top: 0.26rem; margin-top: 0.18rem; }
-  .fi-group { margin-bottom: 0.16rem; line-height: 1.25; }
-  .fi-len { font-size: 0.62rem; min-width: 4.2rem; }
-
-  /* FIX 3: Word search: grid + list side-by-side in print too. */
-  .wordsearch-wrap {
-    flex-direction: row !important;
-    flex-wrap: nowrap;
-    align-items: flex-start;
-    gap: 0.4rem;
-  }
-  .wordsearch { font-size: 0.68rem; }
-  .wordsearch td { width: 0.9rem; height: 0.9rem; }
-  .wordsearch-list {
-    font-size: 0.68rem;
-    columns: 1;
-    flex-shrink: 0;
-    min-width: 4.8rem;
-  }
-  .wordsearch-list li { padding: 0.05rem 0; }
-
-  /* Maze */
-  .maze-svg { max-height: 130px; }
-
-  /* SOS */
-  .sos {
-    border: 1.2px solid #000 !important;
-    background: #fff !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .sos td {
-    width: 1.65rem;
-    height: 1.65rem;
-    border: 1px solid #000 !important;
-    background: #fff !important;
-    font-size: 1.0rem;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .sos .sos-given { color: #8b1a1a !important; }
-
-  /* Cryptogram */
-  .crypto-encoded { font-size: 0.88rem; padding: 0.42rem 0.3rem; margin: 0.12rem 0 0.4rem; line-height: 1.4; word-spacing: 0.32rem; }
-  .crypto-hints { font-size: 0.74rem; }
-  .crypto-hint { font-size: 0.74rem; padding: 0.06rem 0.3rem; background: #fff !important; }
-
-  .games-footer { margin-top: 0.4rem; padding-top: 0.3rem; }
-  .games-footer p { font-size: 0.6rem; }
-
-  /* Ensure backgrounds we DO want (paper-warm editorial in the main paper) print */
-  .editorial, .sudoku td, .puzzle {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
+  .sudoku td { width: 1.2rem; height: 1.2rem; font-size: 0.75rem; }
+  .fillin td { width: 0.8rem; height: 0.8rem; font-size: 0.65rem; }
+  .wordsearch td { width: 0.75rem; height: 0.75rem; font-size: 0.55rem; }
+  .sos td { width: 1.3rem; height: 1.3rem; font-size: 0.8rem; }
+  
+  a { color: var(--ink); text-decoration: underline; }
 }

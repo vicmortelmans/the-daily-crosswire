@@ -22,6 +22,7 @@ SUPPORTED: list[tuple[str, str]] = [
     ("it", "Italian"),
     ("pt", "Portuguese"),
     ("de", "German"),
+    ("nl", "Dutch"),
 ]
 
 CODES: set[str] = {c for c, _ in SUPPORTED}
@@ -114,6 +115,18 @@ _HYPE_WORDS: dict[str, tuple[str, ...]] = {
         "spektakulaer",
         "sensationell",
         "fulminant",
+    ),
+    "nl": (
+        "revolutionair",
+        "baanbrekend",
+        "adembenemend",
+        "spectaculair",
+        "verbazingwekkend",
+        "indrukwekkend",
+        "episch",
+        "verbijsterend"
+        "sensationeel"
+        "ongelofelijk"
     ),
 }
 
@@ -228,6 +241,23 @@ _TEMPLATE_STRINGS: dict[str, dict[str, str]] = {
         "vol": "Bd.",
         "no": "Nr.",
     },
+    "nl": {
+        "paper_sub_topics": "Onderwerpen:",
+        "lead": "Hoofdnieuws",
+        "by": "Door",
+        "desk_wire": "Redactie",
+        "source": "Bron",
+        "editorial_kicker": "Editoriaal",
+        "editorial_title": "Van de redactie",
+        "the_editor": "De hoofdredacteur",
+        "issue_seed": "Issue seed",
+        "generated": "Gegenereerd",
+        "lookback": "Lookback",
+        "city_edition": "Stadseditie",
+        "print": "Print",
+        "vol": "Vol.",
+        "no": "No.",
+    },
 }
 
 
@@ -280,6 +310,11 @@ _EMAIL_STRINGS: dict[str, dict[str, str]] = {
             "Papierkopie aus."
         ),
     },
+    "nl": {
+        "greeting_auto": "De uitgave van vandaag van {paper} is als PDF gehecht.",
+        "greeting_adhoc": "De uitgave van {paper} voor {date} is als PDF gehecht.",
+        "body_note": "Open het PDF-bestand in een viewer, of druk het af voor een papieren kopie.",
+    },
 }
 
 
@@ -297,6 +332,7 @@ _LOCALES: dict[str, str] = {
     "it": "it_IT.UTF-8",
     "pt": "pt_PT.UTF-8",
     "de": "de_DE.UTF-8",
+    "nl": "nl_NL.UTF-8",
 }
 
 
@@ -391,6 +427,20 @@ _MONTHS: dict[str, list[str]] = {
         "November",
         "Dezember",
     ],
+    "nl": [
+        "januari",
+        "februari",
+        "maart",
+        "april",
+        "mei",
+        "juni",
+        "juli",
+        "augustus",
+        "september",
+        "oktober",
+        "november",
+        "december",
+    ],
 }
 
 _WEEKDAYS: dict[str, list[str]] = {
@@ -408,6 +458,7 @@ _WEEKDAYS: dict[str, list[str]] = {
         "domingo",
     ],
     "de": ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
+    "nl": ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"],
 }
 
 
@@ -445,4 +496,6 @@ def format_long_date(d, code: str | None) -> str:
         return f"{wd} {d.day} {mo} {d.year}"
     if c == "de":
         return f"{wd}, {d.day}. {mo} {d.year}"
+    if c == "nl":
+        return f"{wd}, {d.day} {mo} {d.year}"
     return f"{wd}, {mo} {d.day}, {d.year}"

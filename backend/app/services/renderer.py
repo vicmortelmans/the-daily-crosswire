@@ -210,7 +210,8 @@ async def render_issue(issue_id: uuid.UUID) -> tuple[Path, dict[str, Any]]:
 
         date_for_fmt = issue.issue_date or generated_at
         context = {
-            "paper_name": PAPER_NAME,
+            "paper_name": config.name if config else "The Daily Crosswire"
+
             "issue_date_pretty": format_long_date(date_for_fmt, lang_code),
             "issue_id_short": str(issue.id).split("-")[0],
             "generated_at_pretty": generated_at.strftime("%Y-%m-%d %H:%M UTC"),

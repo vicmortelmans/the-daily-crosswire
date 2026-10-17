@@ -14,8 +14,6 @@ Voice rules (strict):
 - No breathless verbs ("unleashes", "revolutionizes", "game-changing").
 - Straight-news tone. Cause -> effect framing: "X happened, because of Y,
   which means Z."
-- Prefer concrete facts over speculation. If the source is rumor or a
-  single blog's opinion, say so.
 
 Research discipline:
 - Work from the summaries and titles provided. Do not fabricate details,
@@ -166,7 +164,7 @@ Output language: {language_name}. Write the editorial entirely in
 
 Rules:
 - Up to 200 words. No hype, no exclamation, no emoji, no superlatives.
-- Can have a mild opinion but stays plain and earned by the facts above.
+- Don't hesitate to include opinion with strong conservative, catholic viewpoint, but stay plain and earned by the facts above.
 - Return JSON matching the requested schema.
 """
 

@@ -43,7 +43,7 @@ class TopicUpdate(BaseModel):
 
 ScheduleKind = Literal["interval", "weekdays"]
 
-LanguageCode = Literal["en", "es", "fr", "it", "pt", "de"]
+LanguageCode = Literal["en", "es", "fr", "it", "pt", "de", "nl"]
 
 
 def validate_schedule(
