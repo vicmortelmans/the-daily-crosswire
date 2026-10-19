@@ -42,7 +42,50 @@ of the KEEP rules below. "Has a date" is NOT enough on its own: the date
 must be meaningful and the item must be a genuine release/incident, not
 promo material.
 
-=== ENTERTAINMENT topics (shows, films, games) ===
+=== FAITH AND RELIGION ===
+
+KEEP ONLY if the item is relevant for practicing the faith and be part of the religious community:
+- Contemplations on holy texts
+- Application of doctrine of faith
+- Practicing religious life
+- Global news about important religious events and authorities and role models
+- News about local religious events and authorities that repesent a unique development
+- Opinions about religious matters
+- Opinions about the role of religion in history, politics and modern society
+
+DROP:
+- News about local religious events or authorities that have no wider relevance
+- Esoterical philosophy
+
+=== OPINION ===
+
+KEEP ONLY if the item links to the topic:
+- In-depth article or essay 
+- Satirical articles
+
+=== PERSONAL BLOGS ===
+
+KEEP ALWAYS
+
+=== FORUM DISCUSSIONS ===
+
+KEEP ONLY IF the discussion links to the topic:
+- Posts with in-depth explaination of some practical solution or an opinion raising controversy.
+
+DROP:
+- Showcase posts without much explaination
+
+=== HISTORY, ART AND CULTURE ===
+
+KEEP ONLY if the item is an in-depth article or essay, covering:
+- Presentation of an artwork
+- Discussing the role of art in modern society or in historical context
+- Work of a specific artist or artist school
+
+DROP:
+- Announcements of exhibitions 
+
+=== ENTERTAINMENT topics (music, shows, films, games) ===
 
 KEEP ONLY IF the item is a genuine new release or premiere with a
 concrete date in the next ~30 days:
@@ -52,7 +95,7 @@ concrete date in the next ~30 days:
   not a port of an existing title, not an anniversary celebration)
 - Original film opening in theaters or streaming debut of NEW content
 - Historic industry news: court rulings with ongoing impact, notable
-  creator deaths, first-of-kind adaptations that specify the target
+  creator deaths, first-of-kind adaptations that specify the target.
 
 DROP (these are filler even if they mention a date):
 - ANY trailer: gameplay trailer, teaser, announcement trailer, launch
@@ -86,7 +129,7 @@ KEEP if the item is a concrete, recent thing affecting the city:
   change, infrastructure project with concrete scope
 - Economic news specific to the city: major business open/close,
   layoffs, investment, large contract
-- Cultural event scheduled IN the city with a date in the next ~60 days
+- Cultural event or exhibition scheduled IN the city with a date in the next ~60 days
 - Notable local figure: award, achievement, death
 
 Social-media URLs (Facebook, Instagram, X / Twitter) special rule:
@@ -122,7 +165,9 @@ Return JSON with:
   or null if nothing stands out. Do not force it.
 - `drop_reasons`: map of news_item_id -> one short reason (under 80 chars)
   for EVERY candidate NOT in `keep_ids`. Keep reasons factual and
-  mechanical: reference the specific rule that caused the drop
+  mechanical: reference the category the article is in (e.g. "faith and religion",
+  "opinion", "persona blogs", "forum discussions", "history, art and culture", 
+  "entertainment", "local/city news") and to the specific rule that caused the drop
   (e.g. "trailer-only, no near-term release", "merch/promo card",
   "aggregator profile, no concrete incident"). Empty dict is OK only if
   every candidate was kept.
@@ -141,7 +186,10 @@ language: translate as needed. Use the natural orthography, punctuation,
 and capitalization conventions of {language_name}.
 
 Rules:
-- 100-150 words. No more, no less.
+- 100-150 words. No more, no less
+- Reproduce verbatim if the original story is shorter than 100 words
+- Write from the same perspective as the original author, as if he is
+  writing a summary for his own artictle
 - Cause -> effect. Start with what happened, then why, then what it means.
 - No hype. No exclamation. No emoji. No superlatives.
 - Write a tight replacement headline (under 70 characters) as "rendered_title".

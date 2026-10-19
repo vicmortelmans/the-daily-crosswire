@@ -727,7 +727,7 @@ html, body {
   }
 
   .paper::after { display: none; }
-  .print-btn, .clock { display: none; }
+  .print-btn, .clock, .weather, .byline { display: none; }
 
   /* Structural elements that must span across all 5 columns */
   .masthead, 
