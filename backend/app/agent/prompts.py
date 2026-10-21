@@ -174,7 +174,7 @@ Return JSON with:
 """
 
 
-DRAFT_INSTRUCTION = """Write a 100-150 word news summary for this story.
+DRAFT_INSTRUCTION = """Write a 100-150 word condensed version of this story.
 Topic: {topic_name}
 Source title: {title}
 Source url: {url}
@@ -187,9 +187,11 @@ and capitalization conventions of {language_name}.
 
 Rules:
 - 100-150 words. No more, no less
-- Reproduce verbatim if the original story is shorter than 100 words
-- Write from the same perspective as the original author, as if he is
-  writing a summary for his own artictle
+- Rewrite the supplied news article as a shorter, self-contained news article.
+- Preserve the original article's journalistic style, narrative perspective, and factual content, but remove secondary details, repetition, and less important information.
+- Write directly about the events, people, and developments described in the article, as a journalist would write a shorter version of the original article.
+- Do not describe the article itself. Do not use phrases such as "the article says", "the article reports", "the source states", or "the text describes". Do not explain what information the article contains.
+- The result must read like an original, concise news article that a reader can understand without having seen the source. Preserve important qualifications and attribute allegations or opinions to their sources where appropriate.
 - Cause -> effect. Start with what happened, then why, then what it means.
 - No hype. No exclamation. No emoji. No superlatives.
 - Write a tight replacement headline (under 70 characters) as "rendered_title".

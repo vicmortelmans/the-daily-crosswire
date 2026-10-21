@@ -167,6 +167,8 @@ def get_issue_details(
             **({"generator_meta": puzzles_meta} if puzzles_meta else {}),
         },
         "render": meta.get("render") or {},
+        "notify": meta.get("notify") or {},
+        "print": meta.get("print") or {},
         "funnel": meta.get("funnel") or {},
         "drops": drops,
         "current_node": meta.get("current_node"),

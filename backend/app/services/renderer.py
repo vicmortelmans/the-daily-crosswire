@@ -140,6 +140,7 @@ async def render_issue(issue_id: uuid.UUID) -> tuple[Path, dict[str, Any]]:
         topics = s.exec(select(Topic).where(Topic.config_id == issue.config_id)).all()
 
         drafts = issue.drafts_json.get("drafts", [])
+        logger.info("DEBUG renderer.py drafts %s", drafts)
         editorial_text = issue.drafts_json.get("editorial")
         puzzles_html = None
         # Puzzles HTML isn't persisted in drafts_json (too big). We regenerate
@@ -231,6 +232,7 @@ async def render_issue(issue_id: uuid.UUID) -> tuple[Path, dict[str, Any]]:
         }
 
         tpl = _env.get_template("issue.html.j2")
+        logger.info("DEBUG renderer.py context %s", context)
         html = tpl.render(**context)
 
         # Write to disk

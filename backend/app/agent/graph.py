@@ -46,9 +46,9 @@ def _timed(name: str, fn):
             completed = meta.setdefault("completed_nodes", [])
             if name not in completed:
                 completed.append(name)
-            # Clear current_node when the last node (notify) finishes;
+            # Clear current_node when the last node (print) finishes;
             # otherwise the next node's entry wrapper will overwrite it.
-            if name == "notify":
+            if name == "print":
                 meta["current_node"] = None
             if issue_id:
                 checkpoint_meta(issue_id, meta)
@@ -74,6 +74,7 @@ def _build_graph() -> StateGraph:
     g.add_node("finalize", _timed("finalize", nodes.finalize))
     g.add_node("render", _timed("render", nodes.render))
     g.add_node("notify", _timed("notify", nodes.notify))
+    g.add_node("print", _timed("print", nodes.print_issue))
 
     g.add_edge(START, "ingest_rss")
     g.add_edge("ingest_rss", "ingest_search")
@@ -87,7 +88,8 @@ def _build_graph() -> StateGraph:
     g.add_edge("puzzles", "finalize")
     g.add_edge("finalize", "render")
     g.add_edge("render", "notify")
-    g.add_edge("notify", END)
+    g.add_edge("notify", "print")
+    g.add_edge("print", END)
 
     return g
 

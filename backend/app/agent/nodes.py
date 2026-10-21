@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import os
+from pathlib import Path
+import tempfile
 import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -157,10 +160,12 @@ async def _invoke_with_parse_retry(
     t0 = time.perf_counter()
     for attempt in range(1, attempts + 1):
         try:
+            logger.info("DEBUG nodes.py AI messages %s", messages)
             result = await asyncio.wait_for(
                 llm.ainvoke(messages),
                 timeout=settings.llm_timeout_seconds,
             )
+            logger.info("DEBUG nodes.py AI result %s", result)
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
             _record_llm_call(
                 state,
@@ -379,6 +384,7 @@ async def embed(state: AgentState) -> AgentState:
             texts = [c.title or c.normalized_title or "" for c in missing]
             try:
                 vectors = await emb_service.embed(texts)
+                logger.info(f"DEBUG nodes.py successfully embedded {len(missing)} texts")
             except Exception as exc:
                 _warn(
                     state,
@@ -1299,6 +1305,7 @@ async def draft(state: AgentState) -> AgentState:
         }
     )
     logger.info("agent draft: %d drafts produced", len(drafts))
+    logger.info("DEBUG nodes.py state %s", drafts)
     return state
 
 
@@ -1768,3 +1775,112 @@ async def notify(state: AgentState) -> AgentState:
     )
     logger.info("agent notify: sent=%d failed=%d", sent, failed)
     return state
+
+
+# ---------------------------------------------------------------------------
+# Node 13: print: send the generated PDF to a CUPS printer.
+# Runs after notify, only when PRINTER is defined in .env. Like notify,
+# a print failure does not flip issue status; the newspaper is already published.
+
+
+async def print_issue(state: AgentState) -> AgentState:
+    from app.models import Issue
+
+    meta_print = state.setdefault("meta", {}).setdefault("print", {})
+
+    printer = settings.printer.strip() if settings.printer else ""
+    if not printer:
+        meta_print.update({"status": "skipped", "reason": "no printer configured"})
+        logger.info("agent print: skipped (no printer configured)")
+        return state
+
+    with Session(engine) as s:
+        issue = s.get(Issue, _uuid(state["issue_id"]))
+        slug = issue.slug if issue else None
+        status_now = issue.status if issue else None
+
+    if status_now != "ready" or not slug:
+        meta_print.update({"status": "skipped", "reason": "issue not ready"})
+        logger.info("agent print: skipped (issue not ready, status=%s)", status_now)
+        return state
+
+    try:
+        from app.services import pdf as pdf_service
+
+        pdf_bytes = await pdf_service.build_issue_pdf(slug)
+    except Exception as exc:
+        meta_print.update(
+            {"status": "failed", "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        )
+        _warn(state, f"print PDF generation failed: {type(exc).__name__}: {exc}")
+        return state
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pdf_filename = f"{slug}.pdf"
+            pdf_file_path = Path(tmp_dir) / pdf_filename
+            pdf_file_path.write_bytes(pdf_bytes)
+
+            cmd = ["lp"]
+            if settings.cups_host:
+                cmd.extend(["-h", settings.cups_host])
+            cmd.extend([
+                "-d",
+                printer,
+                "-o",
+                "PageSize=A3",
+                "-o",
+                "MediaType=PLAIN_NORMAL",
+                "-o",
+                "Duplex=DuplexNoTumble",
+                "-o",
+                "InputSlot=Auto",
+                pdf_filename,
+            ])
+
+            env = {**os.environ}
+            if settings.cups_host:
+                env["CUPS_SERVER"] = settings.cups_host
+
+            logger.info("agent print: running %s in %s", " ".join(cmd), tmp_dir)
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=tmp_dir,
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            err = stderr.decode().strip() or stdout.decode().strip() or f"exit code {proc.returncode}"
+            meta_print.update({
+                "status": "failed",
+                "printer": printer,
+                "error": err[:300],
+            })
+            _warn(state, f"print failed: {err[:200]}")
+            logger.error("agent print: lp failed for %s on %s: %s", slug, printer, err)
+            return state
+
+        out = stdout.decode().strip()
+        meta_print.update({
+            "status": "ok",
+            "printer": printer,
+            "output": out,
+        })
+        logger.info("agent print: submitted job for %s to %s: %s", slug, printer, out)
+    except Exception as exc:
+        meta_print.update({
+            "status": "failed",
+            "printer": printer,
+            "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+        })
+        _warn(state, f"print execution failed: {type(exc).__name__}: {exc}")
+        logger.exception("agent print: exception during print for %s", slug)
+
+    return state
+
+
+print_node = print_issue
+print = print_issue

@@ -92,5 +92,15 @@ class Settings(BaseSettings):
     def smtp_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_from)
 
+    # CUPS printer settings for the print node in the agent pipeline.
+    # PRINTER in .env sets the target printer queue (e.g. Epson-WF-7210).
+    # If empty, the print node is skipped.
+    printer: str = ""
+    cups_host: str = "host.docker.internal"
+
+    @property
+    def printer_configured(self) -> bool:
+        return bool(self.printer and self.printer.strip())
+
 
 settings = Settings()

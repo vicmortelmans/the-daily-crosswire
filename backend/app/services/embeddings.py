@@ -24,13 +24,13 @@ def _get_client() -> AsyncOpenAI:
             api_key=key,
             base_url=settings.effective_embedding_api_base,
         )
-        logger.info("DEBUG Initialized embedding client with base URL %s and API key %s", settings.effective_embedding_api_base, key)
+        logger.info("DEBUG embeddings.py Initialized embedding client with base URL %s and API key %s", settings.effective_embedding_api_base, key)
     return _client
 
 
 async def embed(texts: list[str]) -> list[list[float]]:
     """Compute embeddings for a batch of strings in one API call."""
-    logger.info("DEBUG Invoke embedding model %s for %d texts", settings.embedding_model, len(texts))
+    logger.info("DEBUG embeddings.py Invoke embedding model %s for %d texts", settings.embedding_model, len(texts))
     if not texts:
         return []
     resp = await _get_client().embeddings.create(
