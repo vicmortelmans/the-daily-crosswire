@@ -30,7 +30,7 @@
   {% if hero %}
   <section class="deck">
     <span class="kicker">{{ hero.topic_name }} &middot; {{ strings.lead }}</span>
-    <h2 class="hed hed-hero">{{ hero.rendered_title }}</h2>
+    <h2 class="hed hed-hero">{{ hero.rendered_title|upper }}</h2>
     {% if hero.body %}
     {% set first_dot = hero.body.find('. ') %}
     <p class="subhed">{{ hero.body if first_dot == -1 else hero.body[:first_dot + 1] }}</p>
@@ -51,7 +51,7 @@
         {% set topic_shown = true %}
         {% endif %}
 
-        <h3 class="hed">{{ lead.rendered_title }}</h3>
+        <h3 class="hed">{{ lead.rendered_title|upper }}</h3>
         <p class="byline">{{ strings.by }} {{ strings.desk_wire }} &middot; {{ beat.topic_name }}</p>
         {% if lead.body %}
         <p><span class="dropcap">{{ lead.body[0] }}</span>{{ lead.body[1:] }}</p>
@@ -71,7 +71,7 @@
           {% set topic_shown = true %}
           {% endif %}
 
-          <h3 class="hed">{{ story.rendered_title }}</h3>
+          <h3 class="hed">{{ story.rendered_title|upper }}</h3>
           <p class="byline">{{ strings.by }} {{ strings.desk_wire }} &middot; {{ beat.topic_name }}</p>
           {% if story.body %}
           <p>{{ story.body }}</p>

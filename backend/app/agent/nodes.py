@@ -495,13 +495,14 @@ class _SelectOutput(BaseModel):
 
 
 def _format_candidate_line(c: NewsItem) -> str:
-    # Summary slice bumped 120 -> 250 chars. The shorter slice truncated
-    # too much context (city-news items often get "Luego del..." cut-offs
-    # that made the LLM misjudge). 250 is still well under any single-batch
-    # token budget at 10 items.
+    # Use the article body when available; otherwise fall back to the
+    # summary. The RSS/search teaser is too shallow for quality selection.
+    article_text = (c.article_text or "").strip()
+    summary_text = (c.summary or "").strip()
+    context_text = article_text[:2500] if article_text else summary_text[:250]
     return (
         f"- id={c.id}  title={c.title!r}  source={c.source_domain!r}"
-        f"  summary={(c.summary or '')[:250]!r}"
+        f"  article_text={context_text!r}"
     )
 
 
@@ -516,6 +517,7 @@ async def _select_chunk(
     prompt_lines = [_format_candidate_line(c) for c in chunk]
     user_msg = (
         prompts.SELECT_INSTRUCTION.format(topic_name=topic_name)
+        + "\n\nUse the article_text field when available; it is the full body of the article."
         + "\n\nCandidates:\n"
         + "\n".join(prompt_lines)
     )
@@ -1170,18 +1172,17 @@ def _select_passthrough(state: AgentState) -> AgentState:
 
 
 # ---------------------------------------------------------------------------
-# Node 6: fetch_articles: retrieve full web text for selected stories prior to drafting
+# Node 6: fetch_articles: retrieve full web text for deduped candidates before selection
 
 
 async def fetch_articles(state: AgentState) -> AgentState:
     from app.services.article_extractor import fetch_article_text
 
-    selected_by_topic = state.get("selected_by_topic") or {}
+    kept_ids = state.get("kept_ids") or []
     all_item_ids: list[str] = []
-    for ids in selected_by_topic.values():
-        for i in ids:
-            if i not in all_item_ids:
-                all_item_ids.append(i)
+    for i in kept_ids:
+        if i not in all_item_ids:
+            all_item_ids.append(i)
 
     stories_total = len(all_item_ids)
     meta_fetch = state.setdefault("meta", {}).setdefault("fetch_articles", {})
@@ -1221,14 +1222,12 @@ async def fetch_articles(state: AgentState) -> AgentState:
         progress["current_url"] = item.url
         _checkpoint_progress(state)
 
-        # Check DB cache first
         if item.article_text and len(item.article_text.strip()) >= 50:
             cached += 1
             progress["stories_done"] += 1
             _checkpoint_progress(state)
             return
 
-        # Fetch over HTTP
         text: Optional[str] = None
         async with sem:
             try:
