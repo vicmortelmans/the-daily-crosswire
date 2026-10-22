@@ -29,6 +29,7 @@ const PIPELINE_NODES = [
   "embed",
   "dedupe",
   "select",
+  "fetch_articles",
   "draft",
   "critique",
   "editorial",
@@ -129,6 +130,9 @@ function FunnelView({ funnel }) {
     { key: "embedded_candidates", label: "Embedded" },
     { key: "after_cross_dedup", label: "After cross-issue dedup" },
     { key: "after_select_and_intra_dedup", label: "After select + intra-dedup" },
+    ...(funnel.articles_fetched != null
+      ? [{ key: "articles_fetched", label: "Full articles fetched" }]
+      : []),
     { key: "drafted", label: "Drafted" },
   ];
   const max = Math.max(1, ...steps.map((s) => funnel[s.key] ?? 0));
@@ -918,7 +922,7 @@ function FailedBanner({ details }) {
   );
 }
 
-const NODES_WITH_SUB_DETAIL = new Set(["select", "draft", "critique", "editorial"]);
+const NODES_WITH_SUB_DETAIL = new Set(["select", "fetch_articles", "draft", "critique", "editorial"]);
 
 function PipelineProgress({ details, now }) {
   const completed = new Set(details.completed_nodes ?? []);
@@ -985,10 +989,40 @@ function PipelineProgress({ details, now }) {
 
 function NodeSubDetail({ node, progress, now }) {
   if (node === "select") return <SelectProgressDetail progress={progress} now={now} />;
+  if (node === "fetch_articles") return <FetchArticlesProgressDetail progress={progress} now={now} />;
   if (node === "draft") return <DraftProgressDetail progress={progress} now={now} />;
   if (node === "critique") return <CritiqueProgressDetail progress={progress} />;
   if (node === "editorial") return <EditorialProgressDetail progress={progress} now={now} />;
   return null;
+}
+
+function FetchArticlesProgressDetail({ progress, now }) {
+  const total = progress.stories_total ?? 0;
+  const done = progress.stories_done ?? 0;
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  return (
+    <div className="space-y-1.5 text-xs">
+      <div className="flex items-center justify-between text-neutral-700">
+        <span>
+          Fetching full text: {done}/{total} stories ({pct}%)
+        </span>
+        {progress.current_title && (
+          <span
+            className="truncate max-w-[260px] text-neutral-500 font-mono text-[11px]"
+            title={progress.current_title}
+          >
+            {progress.current_title}
+          </span>
+        )}
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-sky-200">
+        <div
+          className="h-full bg-sky-600 transition-all duration-300"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 function SelectProgressDetail({ progress, now }) {

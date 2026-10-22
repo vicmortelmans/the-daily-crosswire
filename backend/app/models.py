@@ -106,6 +106,15 @@ class NewsItem(SQLModel, table=True):
         default=None,
         sa_column=Column(Vector(EMBED_DIM), nullable=True),
     )
+    # Full article text retrieved prior to drafting.
+    article_text: Optional[str] = Field(default=None, sa_column=Column(sa.Text, nullable=True))
+    article_fetched_at: Optional[datetime] = Field(
+        default=None, sa_type=sa.DateTime(timezone=False), nullable=True
+    )
+    # Fetch status: 'ok', 'fallback_summary', 'failed'
+    article_fetch_status: Optional[str] = Field(
+        default=None, sa_column=Column(sa.String(length=32), nullable=True)
+    )
     fetched_at: datetime = Field(default_factory=now_utc, sa_type=sa.DateTime(timezone=False))
 
 

@@ -107,13 +107,22 @@ LangGraph graph. Nodes in order:
    Finally, if the config has `max_stories_per_topic` set, the surviving
    list is clipped; otherwise the full list passes through.
 
-6. **`draft`**: per selected story, the LLM writes a replacement headline
+6. **`fetch_articles`**: retrieves full article text for the selected
+   stories prior to drafting. Uses `trafilatura` (with fallback heuristics)
+   over async HTTP with realistic browser headers and bounded concurrency.
+   Extracted text is cached in `news_items.article_text` so repeat runs skip
+   external requests. If a site is blocked, paywalled, or times out, the
+   node records status `fallback_summary` and gracefully falls back to the
+   RSS/search snippet.
+
+7. **`draft`**: per selected story, the LLM writes a replacement headline
    (< 70 chars) and a 100-150 word body in cause-and-effect form in the
    config's configured **output language** (`en`, `es`, `fr`, `it`, `pt`,
-   `de`). It translates from multilingual sources as needed. Voice rules
+   `de`). It operates on the full article text (or fallback summary),
+   translating from multilingual sources as needed. Voice rules
    (no hype, no exclamation, no emoji) are enforced by the system prompt.
 
-7. **`critique`**: Python pre-check scans drafts for voice violations:
+8. **`critique`**: Python pre-check scans drafts for voice violations:
    - Exclamation marks and word-count bounds are **language-agnostic**.
    - Hype-word detection uses a per-language list (see
      [backend/app/agent/languages.py](../backend/app/agent/languages.py)).
@@ -124,11 +133,11 @@ LangGraph graph. Nodes in order:
    Flagged drafts are sent to the LLM for rewrite; clean drafts skip the
    round-trip. Rewrites stay in the same language as the draft.
 
-8. **`editorial`**: one 200-word editorial drawing from the lead headlines
+9. **`editorial`**: one 200-word editorial drawing from the lead headlines
    across topics, written in the config's output language. Optional;
    skipped if no leads.
 
-9. **`puzzles`**: themed puzzles page. Pool of words derived from the
+10. **`puzzles`**: themed puzzles page. Pool of words derived from the
    drafted article bodies and topic names; passed to
    [backend/app/puzzles/build.py](../backend/app/puzzles/build.py). Six
    puzzles (sudoku, criss-cross fill-in, word search, maze, 4x4 tic-tac-toe,
@@ -136,13 +145,18 @@ LangGraph graph. Nodes in order:
    seed derived from `sha256(issue_id | config_id)[:4]` and persisted in
    `drafts_json.puzzles_meta.seed` so re-renders are byte-identical.
 
-10. **`finalize`**: persists the whole pipeline state
+11. **`finalize`**: persists the whole pipeline state
     (`drafts_json = {drafts, editorial, warnings, meta, puzzles_meta}`) on
     the `issues` row and sets `status = drafted` (or `failed` if no drafts
     were produced).
 
-11. **`render`**: renders [issue.html.j2](../backend/app/templates/issue.html.j2)
+12. **`render`**: renders [issue.html.j2](../backend/app/templates/issue.html.j2)
     into `issues/{slug}/index.html`, copies the shared `style.css`, rebuilds
+    `story_log` rows with rendered-title embeddings, and marks `status = ready`.
+
+13. **`notify`**: sends an email with the attached PDF to configured recipients.
+
+14. **`print`**: optional CUPS printer submission if configured.
     the puzzle fragment from the persisted seed (injected between
     `GAMES_PAGE_START`/`GAMES_PAGE_END` markers), writes the `story_log`
     rows with title embeddings, and flips `status = ready`. All DB writes

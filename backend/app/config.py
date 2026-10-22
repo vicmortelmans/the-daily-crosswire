@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     dedup_sim_threshold: float = 0.88
     rss_poll_interval_hours: int = 1
 
+    # Full article extraction settings for the fetch_articles node.
+    # Fetches full article bodies for selected candidates prior to drafting.
+    article_fetch_timeout_seconds: float = 10.0
+    article_max_characters: int = 12000
+    article_fetch_concurrency: int = 5
+
     issues_dir: Path = Path("/app/issues")
 
     # Comma-separated list of origins the CORS middleware accepts.

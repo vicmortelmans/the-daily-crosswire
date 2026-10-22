@@ -1170,7 +1170,123 @@ def _select_passthrough(state: AgentState) -> AgentState:
 
 
 # ---------------------------------------------------------------------------
-# Node 6: draft
+# Node 6: fetch_articles: retrieve full web text for selected stories prior to drafting
+
+
+async def fetch_articles(state: AgentState) -> AgentState:
+    from app.services.article_extractor import fetch_article_text
+
+    selected_by_topic = state.get("selected_by_topic") or {}
+    all_item_ids: list[str] = []
+    for ids in selected_by_topic.values():
+        for i in ids:
+            if i not in all_item_ids:
+                all_item_ids.append(i)
+
+    stories_total = len(all_item_ids)
+    meta_fetch = state.setdefault("meta", {}).setdefault("fetch_articles", {})
+    progress = meta_fetch["progress"] = {
+        "stories_total": stories_total,
+        "stories_done": 0,
+        "current_title": None,
+        "current_url": None,
+    }
+    _checkpoint_progress(state)
+
+    if not all_item_ids:
+        meta_fetch.update(
+            {"attempted": 0, "cached": 0, "fetched_ok": 0, "fallback_summary": 0}
+        )
+        return state
+
+    cached = 0
+    fetched_ok = 0
+    fallback_summary = 0
+
+    with Session(engine) as s:
+        items = s.exec(
+            select(NewsItem).where(NewsItem.id.in_([_uuid(i) for i in all_item_ids]))
+        ).all()
+        items_by_id = {str(item.id): item for item in items}
+
+    sem = asyncio.Semaphore(settings.article_fetch_concurrency)
+
+    async def _process_item(item_id: str):
+        nonlocal cached, fetched_ok, fallback_summary
+        item = items_by_id.get(item_id)
+        if not item:
+            return
+
+        progress["current_title"] = (item.title or "")[:80]
+        progress["current_url"] = item.url
+        _checkpoint_progress(state)
+
+        # Check DB cache first
+        if item.article_text and len(item.article_text.strip()) >= 50:
+            cached += 1
+            progress["stories_done"] += 1
+            _checkpoint_progress(state)
+            return
+
+        # Fetch over HTTP
+        text: Optional[str] = None
+        async with sem:
+            try:
+                text = await fetch_article_text(
+                    item.url,
+                    timeout=settings.article_fetch_timeout_seconds,
+                )
+                logger.info("DEBUG nodes.py fetch_article_text from %s returns %s", item.url, text)
+            except Exception as exc:
+                logger.warning("fetch_articles error for %s: %s", item.url, exc)
+                text = None
+
+        with Session(engine) as s:
+            db_item = s.get(NewsItem, item.id)
+            if db_item:
+                if text:
+                    db_item.article_text = text
+                    db_item.article_fetched_at = now_utc()
+                    db_item.article_fetch_status = "ok"
+                    fetched_ok += 1
+                else:
+                    db_item.article_fetch_status = "fallback_summary"
+                    db_item.article_fetched_at = now_utc()
+                    fallback_summary += 1
+                s.add(db_item)
+                s.commit()
+
+        progress["stories_done"] += 1
+        _checkpoint_progress(state)
+
+    tasks = [_process_item(iid) for iid in all_item_ids]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    progress["current_title"] = None
+    progress["current_url"] = None
+    _checkpoint_progress(state)
+
+    meta_fetch.update(
+        {
+            "attempted": stories_total,
+            "cached": cached,
+            "fetched_ok": fetched_ok,
+            "fallback_summary": fallback_summary,
+        }
+    )
+    logger.info(
+        "agent fetch_articles: %d total (%d cached, %d fetched, %d fallback to summary)",
+        stories_total,
+        cached,
+        fetched_ok,
+        fallback_summary,
+    )
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Node 7: draft
 
 
 class _DraftOutput(BaseModel):
@@ -1236,11 +1352,14 @@ async def draft(state: AgentState) -> AgentState:
                 )
                 story_t0 = time.perf_counter()
 
+                source_text = (
+                    (item.article_text or item.summary or "")[: settings.article_max_characters]
+                )
                 user_msg = prompts.DRAFT_INSTRUCTION.format(
                     topic_name=topic.name,
                     title=item.title or "",
                     url=item.url,
-                    summary=(item.summary or "")[:1500],
+                    summary=source_text,
                     language_name=lang_name,
                 )
                 try:
@@ -1333,7 +1452,7 @@ def _draft_passthrough(state: AgentState) -> AgentState:
                         topic_id=topic_id,
                         topic_name=topic.name,
                         rendered_title=item.title or "",
-                        body=(item.summary or "")[:1500],
+                        body=(item.article_text or item.summary or "")[:1500],
                         is_lead=(str(item.id) == lead_id),
                         original_title=item.title or "",
                         original_url=item.url,
@@ -1644,6 +1763,9 @@ async def finalize(state: AgentState) -> AgentState:
         "embedded_candidates": meta.get("embedding", {}).get("total_candidates", 0),
         "after_cross_dedup": meta.get("dedup_breakdown", {}).get("kept", 0),
         "after_select_and_intra_dedup": meta.get("select", {}).get("total_kept", 0),
+        "articles_fetched": meta.get("fetch_articles", {}).get("fetched_ok", 0),
+        "articles_cached": meta.get("fetch_articles", {}).get("cached", 0),
+        "articles_fallback_summary": meta.get("fetch_articles", {}).get("fallback_summary", 0),
         "drafted": meta.get("draft", {}).get("succeeded", len(drafts)),
         "editorial_ok": meta.get("editorial", {}).get("status") == "ok",
         "puzzles_status": meta.get("puzzles", {}).get("status", "skipped"),

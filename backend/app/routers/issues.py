@@ -159,6 +159,7 @@ def get_issue_details(
             "topics_with_keeps": select_meta.get("topics_with_keeps", 0),
             "by_topic": topic_counts,
         },
+        "fetch_articles": meta.get("fetch_articles") or {},
         "draft": meta.get("draft") or {},
         "critique": meta.get("critique") or {},
         "editorial": meta.get("editorial") or {},
