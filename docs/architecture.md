@@ -22,7 +22,7 @@ generated newspaper HTML as static files; the UI iframes it for preview.
 
 | Table                | What it holds                                                             |
 | -------------------- | ------------------------------------------------------------------------- |
-| `newspaper_configs`  | User-defined "newspapers": name, schedule, topics, active flag, optional max-stories-per-topic cap, plus `newsletter_emails` (list of recipient addresses for automatic delivery after each run). |
+| `newspaper_configs`  | User-defined "newspapers": name, schedule, topics, active flag, optional max-stories-per-topic cap, `include_workflow_report` (write the optional per-article HTML report), plus `newsletter_emails` (list of recipient addresses for automatic delivery after each run). |
 | `topics`             | Beats attached to a config: name, preferred domains, free-text search hints. |
 | `rss_feeds`          | Per-topic RSS URLs, with etag + last-modified for cheap conditional polls. |
 | `news_items`         | Ingested stories (URL-unique). Title, summary, `source_domain`, `topic_id`, `embedding vector(768)`. Also captures how the item was discovered: `ingested_via` (`'rss'` or `'searxng'`), `source_feed_url` (when from a feed), `source_query` (when from web search). Legacy rows pre-source-tracking have these as null. |
@@ -40,12 +40,14 @@ Foreign keys:
 pgvector indexes: `ivfflat` with `vector_cosine_ops` on both vector
 columns. Uses cosine distance (`<=>`) for similarity queries.
 
-## The agent pipeline (12 nodes)
+## The agent pipeline (14 nodes)
 
 When a config fires (on schedule or from the "Generate now" button) the
 endpoint creates a pending `issues` row, captures its id, and enqueues a
 one-shot APScheduler job pointed at that issue id. The job calls the
-LangGraph graph. Nodes in order:
+LangGraph graph. Actual execution order after `dedupe` is
+`fetch_articles -> select -> draft`; the descriptions below keep the
+selection and fetch sections together for readability. Nodes in order:
 
 1. **`ingest_rss`**: for every topic with RSS feeds, `feedparser.parse`
    the URL (with etag/last-modified for conditional requests). New entries
@@ -107,8 +109,9 @@ LangGraph graph. Nodes in order:
    Finally, if the config has `max_stories_per_topic` set, the surviving
    list is clipped; otherwise the full list passes through.
 
-6. **`fetch_articles`**: retrieves full article text for the selected
-   stories prior to drafting. Uses `trafilatura` (with fallback heuristics)
+6. **`fetch_articles`**: retrieves full article text for every candidate
+   that survived cross-issue dedup, before the quality filter runs. Uses
+   `trafilatura` (with fallback heuristics)
    over async HTTP with realistic browser headers and bounded concurrency.
    Extracted text is cached in `news_items.article_text` so repeat runs skip
    external requests, and is hard-capped at `ARTICLE_MAX_CHARACTERS`
@@ -156,16 +159,7 @@ LangGraph graph. Nodes in order:
     into `issues/{slug}/index.html`, copies the shared `style.css`, rebuilds
     `story_log` rows with rendered-title embeddings, and marks `status = ready`.
 
-13. **`notify`**: sends an email with the attached PDF to configured recipients.
-
-14. **`print`**: optional CUPS printer submission if configured.
-    the puzzle fragment from the persisted seed (injected between
-    `GAMES_PAGE_START`/`GAMES_PAGE_END` markers), writes the `story_log`
-    rows with title embeddings, and flips `status = ready`. All DB writes
-    happen in one atomic transaction. If render crashes, the issue stays
-    `drafted` and can be re-rendered.
-
-12. **`notify`**: if `config.newsletter_emails` is non-empty and the issue
+13. **`notify`**: if `config.newsletter_emails` is non-empty and the issue
     is `ready`, renders the HTML to PDF via Playwright + headless Chromium
     ([backend/app/services/pdf.py](../backend/app/services/pdf.py)) and
     mails it to every recipient as a multipart/alternative message with
@@ -174,6 +168,9 @@ LangGraph graph. Nodes in order:
     A failed send does not flip issue status; the newspaper is already
     published. Per-recipient outcomes and the overall status land in
     `meta.notify`.
+
+14. **`print`**: optional CUPS printer submission if configured. Like
+    `notify`, a print failure does not flip the issue status.
 
 On an Apple M4 Pro with 48 GB unified RAM running qwen3:14b locally, the
 whole run takes 15-30 minutes depending on LLM latency and how many
@@ -423,6 +420,36 @@ Stages and their reason sources:
 
 The inline `snapshot` means a drop entry stays readable in the dashboard
 even after a cleanup job deletes the `news_items` row it references.
+
+### Workflow report (optional)
+
+When `config.include_workflow_report` is true, `runner.run_issue()` seeds a
+separate `AgentState["workflow_report"]` dictionary. Nodes append events in
+workflow order; the trace is intentionally *not* written to `drafts_json` or
+any database table.
+
+Implementation:
+[backend/app/services/workflow_report.py](../backend/app/services/workflow_report.py)
+and [backend/app/templates/workflow_report.html.j2](../backend/app/templates/workflow_report.html.j2).
+
+Each event carries `news_item_id`, `step`, `status`, an optional reason (with
+`reason_source` = `ai` or `system`), and a step-specific `data` payload
+(title/summary for retrieval, extracted article text, draft body, critique
+before/after, similarity scores, batch ranks, and so on).
+
+Writers are called at node boundaries (`graph._timed`) and at sub-step
+progress checkpoints (`nodes._checkpoint_progress`), throttled to one write
+every few seconds. Each write atomically replaces:
+
+- `issues/{slug}/workflow-report.html` — article-oriented standalone report
+- `issues/{slug}/workflow-report.json` — workflow-order event ledger
+- `issues/{slug}/workflow-report.meta.json` — tiny status file read by the
+  details endpoint
+
+The dashboard's **Report** tab reads availability from
+`GET /api/issues/{id}/details`, iframes the HTML, and offers a download link.
+The report is marked **partial** while the run is active and **final** after
+the last node. No report artifacts are written for configs with the flag off.
 
 ### Per-run log buffer
 

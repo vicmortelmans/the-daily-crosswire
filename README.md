@@ -65,13 +65,20 @@ a PDF to the list automatically.
   snapshot of the source so it stays readable even if the source news_items
   row is garbage-collected later. Drops include the item's `published_at`
   and ingestion origin (RSS feed URL or SearXNG query) when available.
+- **Optional per-article workflow report.** Each config can emit a standalone
+  HTML report while the agent runs. It is organized by retrieved link and
+  shows the full chain: RSS/search input, embedding, cross-issue dedup, full
+  article fetch, quality-filter keep/drop motivation, intra-issue dedup,
+  topic cap, draft input/output, and critique rewrites. The report and its
+  JSON event ledger live in `issues/{slug}/`; no trace data is stored in
+  Postgres. Disable it per config with **Generate workflow report**.
 - **You browse.** The web UI lists past issues with date/config/status
   filters, previews each one in an iframe, and has:
   - a one-click **Print / Save as PDF**;
   - an ad-hoc **Send this issue** form next to the print button for
     emailing a ready issue to a one-off recipient list;
-  - a **Details dashboard** per issue with six tabs: Overview, Pipeline,
-    Drops, Timings, Logs, Run info. **Live while the run is in
+  - a **Details dashboard** per issue with seven tabs: Overview, Pipeline,
+    Drops, Report, Timings, Logs, Run info. **Live while the run is in
     progress:** the dashboard shows the current node, elapsed time per
     step, completed nodes as green checkmarks, and a filtered log tail.
     Failed issues route here too with a banner pointing at the node that

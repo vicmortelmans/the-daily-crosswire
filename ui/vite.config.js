@@ -21,7 +21,8 @@ export default defineConfig({
       // SPA routes like /issues/:id and /issues/:id/details have no
       // extension and fall through to Vite's history fallback so
       // React Router can handle them on reload.
-      "^/issues/[^/]+/[^/]+\\.[a-z0-9]+$": "http://backend:8000",
+      // Optional query string allows the report iframe to cache-bust with ?v=.
+      "^/issues/[^/]+/[^/]+\\.[a-z0-9]+(\\?.*)?$": "http://backend:8000",
     },
     host: "0.0.0.0",
     allowedHosts: true,

@@ -171,6 +171,9 @@ Return JSON with:
   (e.g. "trailer-only, no near-term release", "merch/promo card",
   "aggregator profile, no concrete incident"). Empty dict is OK only if
   every candidate was kept.
+- `keep_reasons`: map of news_item_id -> one short reason (under 80 chars)
+  for every id IN `keep_ids`, naming the KEEP rule it satisfies. This is
+  used in a diagnostic report; keep it factual and mechanical.
 """
 
 

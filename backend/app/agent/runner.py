@@ -11,6 +11,7 @@ from app.config import settings
 from app.db import engine
 from app.models import Issue, NewspaperConfig, Topic
 from app.services import log_buffer
+from app.services import workflow_report
 from app.utils.time import now_utc
 
 logger = logging.getLogger(__name__)
@@ -107,6 +108,17 @@ async def run_issue(issue_id: uuid.UUID) -> dict:
         issue_id_str = str(issue.id)
         config_id_str = str(config.id)
         topic_ids = [str(t.id) for t in topics]
+        report_enabled = bool(config.include_workflow_report)
+        report_ctx = {
+            "slug": issue.slug,
+            "issue_date": issue.issue_date.isoformat() if issue.issue_date else None,
+            "lookback_start": (
+                issue.lookback_start.isoformat() if issue.lookback_start else None
+            ),
+            "lookback_end": issue.lookback_end.isoformat() if issue.lookback_end else None,
+            "config_name": config.name,
+            "language": config.language,
+        }
 
     logger.info(
         "agent run: issue=%s config=%s topics=%d",
@@ -147,6 +159,17 @@ async def run_issue(issue_id: uuid.UUID) -> dict:
         "topic_ids": topic_ids,
         "meta": {"run": run_identity},
     }
+    workflow_report.init_report(
+        initial,
+        enabled=report_enabled,
+        issue_id=issue_id_str,
+        slug=report_ctx["slug"],
+        issue_date=report_ctx["issue_date"],
+        config_name=report_ctx["config_name"],
+        language=report_ctx["language"],
+        lookback_start=report_ctx["lookback_start"],
+        lookback_end=report_ctx["lookback_end"],
+    )
 
     # Route all agent log records into this issue's in-memory buffer so
     # the live dashboard Logs tab can tail them. The buffer is flushed
@@ -158,6 +181,16 @@ async def run_issue(issue_id: uuid.UUID) -> dict:
         try:
             graph = get_graph()
             final_state: AgentState = await graph.ainvoke(initial)
+            # The print node's timed wrapper usually writes the final report,
+            # but keep this explicit so a custom/truncated graph still gets one.
+            final_report = final_state.get("workflow_report")
+            if (
+                (not isinstance(final_report, dict) or not final_report.get("events"))
+                and isinstance(initial.get("workflow_report"), dict)
+                and initial["workflow_report"].get("events")
+            ):
+                final_state["workflow_report"] = initial["workflow_report"]
+            workflow_report.write_report(final_state, final=True)
         except Exception as exc:
             logger.exception("agent graph failed")
             with Session(engine) as s:

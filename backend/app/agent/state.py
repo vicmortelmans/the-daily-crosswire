@@ -34,3 +34,6 @@ class AgentState(TypedDict, total=False):
     # Bookkeeping
     warnings: list[str]
     meta: dict[str, Any]
+    # In-memory workflow trace for the optional per-article HTML report.
+    # Intentionally not copied into drafts_json / the database.
+    workflow_report: dict[str, Any]

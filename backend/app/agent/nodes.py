@@ -34,6 +34,7 @@ from app.services import dedup as dedup_service
 from app.services import embeddings as emb_service
 from app.services import log_buffer
 from app.services import searxng as searxng_service
+from app.services import workflow_report as report_service
 from app.services.rss import normalize_title, poll_feed
 from app.agent import prompts
 from app.agent.checkpoint import checkpoint_meta
@@ -244,9 +245,18 @@ async def ingest_rss(state: AgentState) -> AgentState:
                 for feed in feeds:
                     stats["feeds_polled"] += 1
                     try:
-                        n = poll_feed(s, feed)
-                        stats["items_new"] += int(n)
-                        logger.info("agent ingest_rss: %s -> %d new", feed.url, n)
+                        items = poll_feed(s, feed)
+                        stats["items_new"] += len(items)
+                        for item in items:
+                            report_service.record_retrieved(
+                                state,
+                                item,
+                                topic_name=topic.name,
+                                via="rss",
+                                origin=feed.url,
+                                content=item.summary,
+                            )
+                        logger.info("agent ingest_rss: %s -> %d new", feed.url, len(items))
                     except Exception:
                         stats["failures"] += 1
                         logger.exception("ingest_rss failed for %s", feed.url)
@@ -254,6 +264,7 @@ async def ingest_rss(state: AgentState) -> AgentState:
 
     stats = await asyncio.to_thread(_work)
     state.setdefault("meta", {})["ingest_rss"] = stats
+    report_service.record_global(state, "ingest_rss", "ok" if not stats["failures"] else "failed", data=stats)
     return state
 
 
@@ -338,11 +349,22 @@ async def ingest_search(state: AgentState, min_per_topic: int = 3) -> AgentState
                     pg_insert(NewsItem)
                     .values(rows)
                     .on_conflict_do_nothing(index_elements=["url"])
-                    .returning(NewsItem.id)
+                    .returning(NewsItem.id, NewsItem.url)
                 )
-                result = s.execute(stmt)
-                added = len(result.fetchall())
+                result_rows = s.execute(stmt).fetchall()
+                added = len(result_rows)
                 s.commit()
+                row_by_url = {r["url"]: r for r in rows}
+                for new_id, new_url in result_rows:
+                    row = row_by_url.get(new_url) or {}
+                    report_service.record_retrieved(
+                        state,
+                        {"id": new_id, **row},
+                        topic_name=topic.name,
+                        via="searxng",
+                        origin=query,
+                        content=row.get("summary"),
+                    )
             stats["items_added"] += added
             logger.info(
                 "agent ingest_search: topic=%r query=%r added=%d",
@@ -351,6 +373,9 @@ async def ingest_search(state: AgentState, min_per_topic: int = 3) -> AgentState
                 added,
             )
     state.setdefault("meta", {})["ingest_search"] = stats
+    report_service.record_global(
+        state, "ingest_search", "ok" if not stats["failures"] else "failed", data=stats
+    )
     return state
 
 
@@ -378,8 +403,17 @@ async def embed(state: AgentState) -> AgentState:
             )
         ).all()
 
+        topics_by_id = {
+            str(t.id): t.name
+            for t in s.exec(
+                select(Topic).where(Topic.id.in_([_uuid(t) for t in state["topic_ids"]]))
+            ).all()
+        }
+
         missing = [c for c in candidates if c.embedding is None]
         unembedded_count = 0
+        newly_embedded_ids: set[str] = set()
+        embedding_error: Optional[str] = None
         if missing:
             texts = [c.title or c.normalized_title or "" for c in missing]
             try:
@@ -392,13 +426,72 @@ async def embed(state: AgentState) -> AgentState:
                     "Proceeding without vectors; semantic dedup will be skipped for them.",
                 )
                 vectors = []
+                embedding_error = f"{type(exc).__name__}: {exc}"
 
             if vectors and len(vectors) == len(missing):
                 for item, vec in zip(missing, vectors):
                     item.embedding = vec
+                    newly_embedded_ids.add(str(item.id))
                 s.commit()
             else:
                 unembedded_count = len(missing)
+
+        # Establish the article list for this run. Items ingested in earlier
+        # runs still enter the window, so they get a synthesized retrieval line.
+        for candidate in candidates:
+            report_service.ensure_article(
+                state,
+                candidate,
+                topic_name=topics_by_id.get(str(candidate.topic_id)),
+                synthesized=True,
+            )
+
+        # Any link retrieved during this run that did not become a candidate
+        # was excluded by the lookback window. Record that decision explicitly.
+        candidate_ids = {str(c.id) for c in candidates}
+        ctx = state.get("workflow_report") or {}
+        if report_service.report_enabled(state):
+            for nid, article in (ctx.get("articles") or {}).items():
+                if nid in candidate_ids:
+                    continue
+                report_service.record_event(
+                    state,
+                    news_item_id=nid,
+                    step="lookback_filter",
+                    status="dropped",
+                    topic_id=article.get("topic_id"),
+                    topic_name=article.get("topic_name"),
+                    reason="Outside this issue's lookback window.",
+                    reason_source="system",
+                    data={"lookback_start": lookback_start.isoformat()},
+                )
+
+        for candidate in candidates:
+            nid = str(candidate.id)
+            if nid in newly_embedded_ids:
+                status = "ok"
+                note = None
+            elif candidate.embedding is not None:
+                status = "ok"
+                note = "already embedded"
+            else:
+                status = "failed"
+                note = embedding_error or "no embedding returned"
+            report_service.record_event(
+                state,
+                news_item_id=nid,
+                step="embedded",
+                status=status,
+                topic_id=str(candidate.topic_id) if candidate.topic_id else None,
+                topic_name=topics_by_id.get(str(candidate.topic_id)),
+                reason=note,
+                reason_source="system",
+                data={
+                    "model": settings.embedding_model,
+                    "already_embedded": nid not in newly_embedded_ids,
+                    "error": embedding_error if status == "failed" else None,
+                },
+            )
 
         state.setdefault("meta", {})["embedding"] = {
             "total_candidates": len(candidates),
@@ -438,10 +531,21 @@ async def dedupe(state: AgentState) -> AgentState:
         }
         cand_by_id = {str(c.id): c for c in candidates}
         for d in decisions:
-            if d.decision == "kept":
-                continue
             nid = str(d.candidate_id)
             n = cand_by_id.get(nid)
+            if n is not None:
+                report_service.ensure_article(state, n, synthesized=True)
+            if d.decision == "kept":
+                report_service.record_event(
+                    state,
+                    news_item_id=nid,
+                    step="cross_dedup",
+                    status="kept",
+                    topic_id=str(n.topic_id) if n and n.topic_id else None,
+                    reason="Not present in the recent story_log window.",
+                    reason_source="system",
+                )
+                continue
             info = d.match_info or {}
             if d.decision == "dropped_url":
                 reason = "url already in story_log window"
@@ -462,6 +566,20 @@ async def dedupe(state: AgentState) -> AgentState:
                 topic_id=str(n.topic_id) if n and n.topic_id else None,
                 reason=reason,
                 snapshot=_snapshot_news_item(n) if n else None,
+            )
+            report_service.record_event(
+                state,
+                news_item_id=nid,
+                step="cross_dedup",
+                status="dropped",
+                topic_id=str(n.topic_id) if n and n.topic_id else None,
+                reason=reason,
+                reason_source="system",
+                data={
+                    "decision": d.decision,
+                    "similarity": info.get("similarity"),
+                    "matched_title": info.get("matched_title"),
+                },
             )
         logger.info("agent dedupe: %d candidates -> %d kept", len(candidates), len(kept))
     return state
@@ -490,6 +608,13 @@ class _SelectOutput(BaseModel):
             "Map of news_item_id -> short one-line reason (under 80 chars) "
             "for every candidate NOT in keep_ids. Factual and mechanical "
             "(e.g. 'trailer-only, no near-term release', 'merch/promo card')."
+        ),
+    )
+    keep_reasons: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional map of news_item_id -> short one-line reason for why "
+            "each kept candidate was selected. Used by the workflow report."
         ),
     )
 
@@ -764,6 +889,8 @@ def _checkpoint_progress(state: AgentState) -> None:
     meta = state.get("meta") or {}
     checkpoint_meta(issue_id, meta)
     log_buffer.flush_to_db(issue_id)
+    # Throttled live report refresh at select/draft/critique sub-steps.
+    report_service.write_if_due(state, final=False)
 
 
 async def select_stories(state: AgentState) -> AgentState:
@@ -884,6 +1011,25 @@ async def select_stories(state: AgentState) -> AgentState:
                         f"(batch {batch_idx + 1}/{n_batches}, {len(chunk)} items, "
                         f"{type(exc).__name__}): {exc}. Dropping this batch.",
                     )
+                    for item in chunk:
+                        report_service.record_event(
+                            state,
+                            news_item_id=str(item.id),
+                            step="select",
+                            status="dropped",
+                            topic_id=str(topic.id),
+                            topic_name=topic.name,
+                            reason=(
+                                "Quality-filter LLM call failed after retries; "
+                                "the whole batch was dropped."
+                            ),
+                            reason_source="system",
+                            data={
+                                "batch_index": batch_idx + 1,
+                                "batch_total": n_batches,
+                                "error": f"{type(exc).__name__}: {exc}",
+                            },
+                        )
                     continue
 
                 # Merge flat schema: union keep_ids preserving order; take
@@ -896,6 +1042,12 @@ async def select_stories(state: AgentState) -> AgentState:
                 per_batch_cap = max(1, settings.select_max_kept_per_batch)
                 kept_from_chunk = 0
                 accepted_this_batch: set[str] = set()
+                cap_trimmed_this_batch: set[str] = set()
+                keep_reasons = {
+                    str(k): str(v)[:120]
+                    for k, v in (result.keep_reasons or {}).items()
+                    if str(k) in chunk_keeps
+                }
                 for nid in result.keep_ids or []:
                     nid_str = str(nid)
                     if nid_str not in chunk_keeps:
@@ -911,11 +1063,44 @@ async def select_stories(state: AgentState) -> AgentState:
                             reason=f"exceeded per-batch cap of {per_batch_cap}",
                             snapshot=_snapshot_news_item(n) if n else None,
                         )
+                        cap_trimmed_this_batch.add(nid_str)
+                        report_service.record_event(
+                            state,
+                            news_item_id=nid_str,
+                            step="select_cap",
+                            status="dropped",
+                            topic_id=str(topic.id),
+                            topic_name=topic.name,
+                            reason=f"Exceeded the per-batch cap of {per_batch_cap}.",
+                            reason_source="system",
+                            data={
+                                "batch_index": batch_idx + 1,
+                                "batch_total": n_batches,
+                                "max_kept_per_batch": per_batch_cap,
+                            },
+                        )
                         continue
                     if nid_str not in seen_keep:
                         seen_keep.add(nid_str)
                         keep_ordered.append(nid_str)
                         kept_from_chunk += 1
+                        report_service.record_event(
+                            state,
+                            news_item_id=nid_str,
+                            step="select",
+                            status="kept",
+                            topic_id=str(topic.id),
+                            topic_name=topic.name,
+                            reason=keep_reasons.get(
+                                nid_str, "Selected by the quality filter."
+                            ),
+                            reason_source="ai" if nid_str in keep_reasons else "system",
+                            data={
+                                "batch_index": batch_idx + 1,
+                                "batch_total": n_batches,
+                                "rank": kept_from_chunk,
+                            },
+                        )
                     accepted_this_batch.add(nid_str)
                 if lead is None and result.lead_id:
                     lead_str = str(result.lead_id)
@@ -932,15 +1117,34 @@ async def select_stories(state: AgentState) -> AgentState:
                     nid_str = str(c.id)
                     if nid_str in accepted_this_batch:
                         continue
+                    reason = llm_reasons.get(
+                        nid_str, "dropped by quality filter; no reason given"
+                    )
                     _record_drop(
                         state,
                         news_item_id=nid_str,
                         stage="select_llm",
                         topic_id=str(topic.id),
-                        reason=llm_reasons.get(
-                            nid_str, "dropped by quality filter; no reason given"
-                        ),
+                        reason=reason,
                         snapshot=_snapshot_news_item(c),
+                    )
+                    # Cap-trimmed items already have a terminal select_cap
+                    # event; do not add a duplicate report entry.
+                    if nid_str in cap_trimmed_this_batch:
+                        continue
+                    report_service.record_event(
+                        state,
+                        news_item_id=nid_str,
+                        step="select",
+                        status="dropped",
+                        topic_id=str(topic.id),
+                        topic_name=topic.name,
+                        reason=reason,
+                        reason_source="ai" if nid_str in llm_reasons else "system",
+                        data={
+                            "batch_index": batch_idx + 1,
+                            "batch_total": n_batches,
+                        },
                     )
 
                 batch_elapsed = time.perf_counter() - batch_t0
@@ -1015,15 +1219,37 @@ async def select_stories(state: AgentState) -> AgentState:
                             topic.name,
                             nid,
                         )
+                        reason = drop_reasons.get(nid, "duplicate of another kept item")
                         _record_drop(
                             state,
                             news_item_id=nid,
                             stage="intra_dedup_llm",
                             topic_id=str(topic.id),
-                            reason=drop_reasons.get(nid, "duplicate of another kept item"),
+                            reason=reason,
                             snapshot=_snapshot_news_item(n) if n else None,
                         )
+                        report_service.record_event(
+                            state,
+                            news_item_id=nid,
+                            step="intra_dedup_llm",
+                            status="dropped",
+                            topic_id=str(topic.id),
+                            topic_name=topic.name,
+                            reason=reason,
+                            reason_source="ai",
+                        )
                     keep_ordered = [nid for nid in keep_ordered if nid not in drop_set]
+                for nid in keep_ordered:
+                    report_service.record_event(
+                        state,
+                        news_item_id=nid,
+                        step="intra_dedup_llm",
+                        status="kept",
+                        topic_id=str(topic.id),
+                        topic_name=topic.name,
+                        reason="Not flagged as a duplicate by the AI dedup pass.",
+                        reason_source="system",
+                    )
 
                 logger.info(
                     "agent select: topic=%r (%d/%d) intra-dedup (llm) dropped=%d elapsed=%.1fs",
@@ -1044,6 +1270,7 @@ async def select_stories(state: AgentState) -> AgentState:
                 keep_ordered,
                 settings.select_intra_sim_threshold,
             )
+            dropped_emb_ids = {pair[0] for pair in (collapsed or [])}
             if collapsed:
                 for dropped_id, kept_id, sim in collapsed:
                     n = dedup_by_id.get(dropped_id)
@@ -1054,14 +1281,39 @@ async def select_stories(state: AgentState) -> AgentState:
                         kept_id,
                         sim,
                     )
+                    reason = f"near-duplicate of {kept_id} (sim={sim:.3f})"
                     _record_drop(
                         state,
                         news_item_id=dropped_id,
                         stage="intra_dedup_emb",
                         topic_id=str(topic.id),
-                        reason=f"near-duplicate of {kept_id} (sim={sim:.3f})",
+                        reason=reason,
                         snapshot=_snapshot_news_item(n) if n else None,
                     )
+                    report_service.record_event(
+                        state,
+                        news_item_id=dropped_id,
+                        step="intra_dedup_emb",
+                        status="dropped",
+                        topic_id=str(topic.id),
+                        topic_name=topic.name,
+                        reason=reason,
+                        reason_source="system",
+                        data={"similarity": sim, "matched_kept_id": kept_id},
+                    )
+            for nid in keep_ordered:
+                if nid in dropped_emb_ids:
+                    continue
+                report_service.record_event(
+                    state,
+                    news_item_id=nid,
+                    step="intra_dedup_emb",
+                    status="kept",
+                    topic_id=str(topic.id),
+                    topic_name=topic.name,
+                    reason="Below the embedding near-duplicate threshold.",
+                    reason_source="system",
+                )
             logger.info(
                 "agent select: topic=%r (%d/%d) intra-dedup (emb) dropped=%d",
                 topic.name,
@@ -1080,13 +1332,25 @@ async def select_stories(state: AgentState) -> AgentState:
                 keep_ordered = keep_ordered[: config.max_stories_per_topic]
                 for nid in trimmed:
                     n = dedup_by_id.get(nid)
+                    reason = f"exceeded max_stories_per_topic={config.max_stories_per_topic}"
                     _record_drop(
                         state,
                         news_item_id=nid,
                         stage="select_topic_cap",
                         topic_id=str(topic.id),
-                        reason=(f"exceeded max_stories_per_topic={config.max_stories_per_topic}"),
+                        reason=reason,
                         snapshot=_snapshot_news_item(n) if n else None,
+                    )
+                    report_service.record_event(
+                        state,
+                        news_item_id=nid,
+                        step="topic_cap",
+                        status="dropped",
+                        topic_id=str(topic.id),
+                        topic_name=topic.name,
+                        reason=reason,
+                        reason_source="system",
+                        data={"max_stories_per_topic": config.max_stories_per_topic},
                     )
                 if lead and lead not in keep_ordered:
                     lead = keep_ordered[0] if keep_ordered else None
@@ -1166,6 +1430,16 @@ def _select_passthrough(state: AgentState) -> AgentState:
                 selected_by_topic.setdefault(tid, []).append(str(item.id))
             for tid, ids in selected_by_topic.items():
                 lead_by_topic[tid] = ids[0]
+                for nid in ids:
+                    report_service.record_event(
+                        state,
+                        news_item_id=nid,
+                        step="select",
+                        status="kept",
+                        topic_id=tid,
+                        reason="Chat LLM not configured; passthrough kept all candidates.",
+                        reason_source="system",
+                    )
     state["selected_by_topic"] = selected_by_topic
     state["lead_by_topic"] = lead_by_topic
     return state
@@ -1203,6 +1477,7 @@ async def fetch_articles(state: AgentState) -> AgentState:
     cached = 0
     fetched_ok = 0
     fallback_summary = 0
+    fetch_results: dict[str, dict] = {}
 
     with Session(engine) as s:
         items = s.exec(
@@ -1224,6 +1499,12 @@ async def fetch_articles(state: AgentState) -> AgentState:
 
         if item.article_text and len(item.article_text.strip()) >= 50:
             cached += 1
+            fetch_results[item_id] = {
+                "status": "cached",
+                "text": item.article_text,
+                "char_count": len(item.article_text),
+                "error": None,
+            }
             progress["stories_done"] += 1
             _checkpoint_progress(state)
             return
@@ -1248,10 +1529,22 @@ async def fetch_articles(state: AgentState) -> AgentState:
                     db_item.article_fetched_at = now_utc()
                     db_item.article_fetch_status = "ok"
                     fetched_ok += 1
+                    fetch_results[item_id] = {
+                        "status": "fetched",
+                        "text": text,
+                        "char_count": len(text),
+                        "error": None,
+                    }
                 else:
                     db_item.article_fetch_status = "fallback_summary"
                     db_item.article_fetched_at = now_utc()
                     fallback_summary += 1
+                    fetch_results[item_id] = {
+                        "status": "fallback",
+                        "text": None,
+                        "char_count": 0,
+                        "error": "Fetch or extraction failed; used the stored summary.",
+                    }
                 s.add(db_item)
                 s.commit()
 
@@ -1261,6 +1554,38 @@ async def fetch_articles(state: AgentState) -> AgentState:
     tasks = [_process_item(iid) for iid in all_item_ids]
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Record in original candidate order rather than task completion order.
+    for item_id in all_item_ids:
+        item = items_by_id.get(item_id)
+        if item is not None:
+            report_service.ensure_article(state, item, synthesized=True)
+        result = fetch_results.get(item_id)
+        if not result:
+            result = {
+                "status": "failed",
+                "text": None,
+                "char_count": 0,
+                "error": "Fetch did not produce a result.",
+            }
+        report_service.record_event(
+            state,
+            news_item_id=item_id,
+            step="article_fetch",
+            status=result["status"],
+            topic_id=str(item.topic_id) if item and item.topic_id else None,
+            reason=result.get("error"),
+            reason_source="system",
+            data={
+                "text": result.get("text"),
+                "char_count": result.get("char_count", 0),
+                "truncated": bool(
+                    settings.article_max_characters > 0
+                    and result.get("char_count", 0) >= settings.article_max_characters
+                ),
+                "error": result.get("error"),
+            },
+        )
 
     progress["current_title"] = None
     progress["current_url"] = None
@@ -1351,8 +1676,27 @@ async def draft(state: AgentState) -> AgentState:
                 )
                 story_t0 = time.perf_counter()
 
+                source_kind = "article_text" if item.article_text else "summary"
                 source_text = (
                     (item.article_text or item.summary or "")[: settings.article_max_characters]
+                )
+                report_service.ensure_article(state, item, topic_name=topic.name, synthesized=True)
+                report_service.record_event(
+                    state,
+                    news_item_id=str(item.id),
+                    step="draft_input",
+                    status="info",
+                    topic_id=topic_id,
+                    topic_name=topic.name,
+                    reason=f"Draft source: {source_kind}.",
+                    reason_source="system",
+                    data={
+                        "source_kind": source_kind,
+                        "source_text": source_text,
+                        "char_count": len(source_text),
+                        "title": item.title or "",
+                        "url": report_service.safe_url(item.url),
+                    },
                 )
                 user_msg = prompts.DRAFT_INSTRUCTION.format(
                     topic_name=topic.name,
@@ -1377,6 +1721,16 @@ async def draft(state: AgentState) -> AgentState:
                         state,
                         f"draft LLM failed for {item.id} ({type(exc).__name__}): {exc}. Skipping item.",
                     )
+                    report_service.record_event(
+                        state,
+                        news_item_id=str(item.id),
+                        step="draft",
+                        status="failed",
+                        topic_id=topic_id,
+                        topic_name=topic.name,
+                        reason=f"{type(exc).__name__}: {exc}",
+                        reason_source="system",
+                    )
                     logger.info(
                         "agent draft: story %d/%d failed in %.1fs",
                         attempted,
@@ -1387,17 +1741,35 @@ async def draft(state: AgentState) -> AgentState:
                     _checkpoint_progress(state)
                     continue
 
+                rendered_title = out.rendered_title.strip()
+                rendered_body = out.body.strip()
+                is_lead = str(item.id) == lead_id
                 drafts.append(
                     DraftDict(
                         news_item_id=str(item.id),
                         topic_id=topic_id,
                         topic_name=topic.name,
-                        rendered_title=out.rendered_title.strip(),
-                        body=out.body.strip(),
-                        is_lead=(str(item.id) == lead_id),
+                        rendered_title=rendered_title,
+                        body=rendered_body,
+                        is_lead=is_lead,
                         original_title=item.title or "",
                         original_url=item.url,
                     )
+                )
+                report_service.record_event(
+                    state,
+                    news_item_id=str(item.id),
+                    step="draft",
+                    status="ok",
+                    topic_id=topic_id,
+                    topic_name=topic.name,
+                    reason="Draft produced.",
+                    reason_source="system",
+                    data={
+                        "rendered_title": rendered_title,
+                        "body": rendered_body,
+                        "is_lead": is_lead,
+                    },
                 )
                 logger.info(
                     "agent draft: story %d/%d succeeded in %.1fs",
@@ -1445,17 +1817,51 @@ def _draft_passthrough(state: AgentState) -> AgentState:
             ).all()
             lead_id = state.get("lead_by_topic", {}).get(topic_id)
             for item in items:
+                source_text = (item.article_text or item.summary or "")[:1500]
+                rendered_title = item.title or ""
+                rendered_body = source_text
+                is_lead = str(item.id) == lead_id
                 drafts.append(
                     DraftDict(
                         news_item_id=str(item.id),
                         topic_id=topic_id,
                         topic_name=topic.name,
-                        rendered_title=item.title or "",
-                        body=(item.article_text or item.summary or "")[:1500],
-                        is_lead=(str(item.id) == lead_id),
+                        rendered_title=rendered_title,
+                        body=rendered_body,
+                        is_lead=is_lead,
                         original_title=item.title or "",
                         original_url=item.url,
                     )
+                )
+                report_service.record_event(
+                    state,
+                    news_item_id=str(item.id),
+                    step="draft_input",
+                    status="info",
+                    topic_id=topic_id,
+                    topic_name=topic.name,
+                    reason="Chat LLM not configured; passthrough draft.",
+                    reason_source="system",
+                    data={
+                        "source_kind": "article_text" if item.article_text else "summary",
+                        "source_text": source_text,
+                        "char_count": len(source_text),
+                    },
+                )
+                report_service.record_event(
+                    state,
+                    news_item_id=str(item.id),
+                    step="draft",
+                    status="ok",
+                    topic_id=topic_id,
+                    topic_name=topic.name,
+                    reason="Passthrough used the source text as the draft.",
+                    reason_source="system",
+                    data={
+                        "rendered_title": rendered_title,
+                        "body": rendered_body,
+                        "is_lead": is_lead,
+                    },
                 )
     state["drafts"] = drafts
     return state
@@ -1530,6 +1936,17 @@ async def critique(state: AgentState) -> AgentState:
             _checkpoint_progress(state)
 
             if not _has_voice_violation(d.get("body", ""), lang_code):
+                report_service.record_event(
+                    state,
+                    news_item_id=d.get("news_item_id"),
+                    step="critique",
+                    status="ok",
+                    topic_id=d.get("topic_id"),
+                    topic_name=d.get("topic_name"),
+                    reason="No voice violation detected.",
+                    reason_source="system",
+                    data={"body": d.get("body", "")},
+                )
                 progress["drafts_checked"] += 1
                 logger.info("agent critique: draft %d/%d clean (no rewrite)", idx, len(drafts))
                 _checkpoint_progress(state)
@@ -1539,8 +1956,9 @@ async def critique(state: AgentState) -> AgentState:
             _checkpoint_progress(state)
             logger.info("agent critique: draft %d/%d rewrite required", idx, len(drafts))
             rewrite_t0 = time.perf_counter()
+            before_body = d.get("body", "")
             user_msg = prompts.CRITIQUE_INSTRUCTION.format(
-                body=d.get("body", ""),
+                body=before_body,
                 language_name=lang_name,
             )
             try:
@@ -1554,6 +1972,25 @@ async def critique(state: AgentState) -> AgentState:
                     d["body"] = out.body.strip()
                     rewrites += 1
                     progress["rewrites_done"] = rewrites
+                report_service.record_event(
+                    state,
+                    news_item_id=d.get("news_item_id"),
+                    step="critique",
+                    status="rewritten" if out.needs_rewrite else "ok",
+                    topic_id=d.get("topic_id"),
+                    topic_name=d.get("topic_name"),
+                    reason=(
+                        "Voice violation detected; body rewritten."
+                        if out.needs_rewrite
+                        else "Flagged mechanically, but the review found no rewrite necessary."
+                    ),
+                    reason_source="ai",
+                    data={
+                        "before": before_body,
+                        "after": d.get("body", ""),
+                        "body": d.get("body", ""),
+                    },
+                )
                 logger.info(
                     "agent critique: draft %d/%d rewrite completed in %.1fs",
                     idx,
@@ -1563,8 +2000,31 @@ async def critique(state: AgentState) -> AgentState:
             except LLM_CATCHABLE as exc:
                 failures += 1
                 _warn(state, f"critique LLM failed ({type(exc).__name__}): {exc}")
+                report_service.record_event(
+                    state,
+                    news_item_id=d.get("news_item_id"),
+                    step="critique",
+                    status="failed",
+                    topic_id=d.get("topic_id"),
+                    topic_name=d.get("topic_name"),
+                    reason=f"Critique LLM failed: {type(exc).__name__}: {exc}",
+                    reason_source="system",
+                    data={"before": before_body, "after": before_body, "body": before_body},
+                )
             progress["drafts_checked"] += 1
             _checkpoint_progress(state)
+    else:
+        for d in drafts:
+            report_service.record_event(
+                state,
+                news_item_id=d.get("news_item_id"),
+                step="critique",
+                status="skipped",
+                topic_id=d.get("topic_id"),
+                topic_name=d.get("topic_name"),
+                reason="Chat LLM not configured; critique skipped.",
+                reason_source="system",
+            )
 
     progress["current_draft_index"] = 0
     progress["current_phase"] = None
@@ -1596,6 +2056,12 @@ async def editorial(state: AgentState) -> AgentState:
     if not chat_llm_configured() or not state.get("drafts"):
         meta_ed["status"] = "skipped"
         meta_ed["progress"] = {"status": "skipped", "started_at": None, "topics_count": 0}
+        report_service.record_global(
+            state,
+            "editorial",
+            "skipped",
+            reason="No drafts or chat LLM not configured.",
+        )
         return state
 
     leads: list[str] = []
@@ -1621,6 +2087,7 @@ async def editorial(state: AgentState) -> AgentState:
         meta_ed["status"] = "skipped"
         meta_ed["reason"] = "no leads"
         meta_ed["progress"] = {"status": "skipped", "started_at": None, "topics_count": 0}
+        report_service.record_global(state, "editorial", "skipped", reason="No lead stories.")
         return state
 
     progress = meta_ed["progress"] = {
@@ -1649,6 +2116,13 @@ async def editorial(state: AgentState) -> AgentState:
         meta_ed["status"] = "ok"
         meta_ed["word_count"] = len(state["editorial"].split())
         progress["status"] = "done"
+        report_service.record_global(
+            state,
+            "editorial",
+            "ok",
+            reason="Editorial drafted.",
+            data={"text": state["editorial"], "word_count": meta_ed["word_count"]},
+        )
         logger.info(
             "agent editorial: ok in %.1fs (%d words)",
             time.perf_counter() - editorial_t0,
@@ -1659,6 +2133,12 @@ async def editorial(state: AgentState) -> AgentState:
         meta_ed["error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
         progress["status"] = "failed"
         _warn(state, f"editorial LLM failed ({type(exc).__name__}): {exc}")
+        report_service.record_global(
+            state,
+            "editorial",
+            "failed",
+            reason=f"{type(exc).__name__}: {exc}",
+        )
         logger.info(
             "agent editorial: failed in %.1fs",
             time.perf_counter() - editorial_t0,
@@ -1771,6 +2251,24 @@ async def finalize(state: AgentState) -> AgentState:
     }
     meta.setdefault("run", {})["finished_at"] = now_utc().isoformat()
 
+    for d in drafts:
+        report_service.record_event(
+            state,
+            news_item_id=d.get("news_item_id"),
+            step="published",
+            status="ok",
+            topic_id=d.get("topic_id"),
+            topic_name=d.get("topic_name"),
+            reason="Included in the rendered issue.",
+            reason_source="system",
+            data={
+                "rendered_title": d.get("rendered_title"),
+                "topic_name": d.get("topic_name"),
+                "is_lead": bool(d.get("is_lead")),
+            },
+        )
+    report_service.record_global(state, "finalize", "ok", data=meta["funnel"])
+
     with Session(engine) as s:
         issue = s.get(Issue, _uuid(state["issue_id"]))
         if issue is None:
@@ -1815,6 +2313,9 @@ async def render(state: AgentState) -> AgentState:
         logger.info("agent render: wrote %s", html_path)
     except Exception as exc:
         _warn(state, f"render failed: {exc}")
+        report_service.record_global(
+            state, "render", "failed", reason=f"{type(exc).__name__}: {exc}"
+        )
         # Don't re-raise: finalize already persisted drafts_json, issue stays 'drafted'.
     return state
 

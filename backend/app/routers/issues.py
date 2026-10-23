@@ -16,6 +16,7 @@ from app.schemas import (
     RecipientOutcome,
 )
 from app.services import log_buffer
+from app.services import workflow_report
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
 
@@ -135,6 +136,10 @@ def get_issue_details(
         )
     topic_counts.sort(key=lambda r: (-r["kept"], r["topic_name"]))
 
+    report_path = f"issues/{issue.slug}/workflow-report.html"
+    report_file = settings.issues_dir / issue.slug / "workflow-report.html"
+    report_meta = workflow_report.read_report_meta(issue.slug)
+
     return {
         "issue_id": str(issue.id),
         "slug": issue.slug,
@@ -177,6 +182,15 @@ def get_issue_details(
         "node_started_at": meta.get("node_started_at") or {},
         "failed_at_node": meta.get("failed_at_node"),
         "error": issue.error or meta.get("error"),
+        "workflow_report": {
+            "enabled": bool(cfg.include_workflow_report) if cfg else False,
+            "path": report_path,
+            "available": report_file.exists(),
+            "generated_at": report_meta.get("generated_at"),
+            "article_count": report_meta.get("article_count", 0),
+            "final": bool(report_meta.get("final", False)),
+            "status": report_meta.get("status"),
+        },
     }
 
 

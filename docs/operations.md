@@ -25,6 +25,9 @@ LLM latency dominates.
   `story_log`.
 - `tests/test_renderer.py`: renderer unit tests with fabricated
   `drafts_json`. Fast (no LLM). Tests atomicity and idempotent re-render.
+- `tests/test_workflow_report.py`: pure unit tests for event grouping,
+  outcome resolution, HTML escaping, artifact writing, and the disabled flag.
+  No database or LLM calls.
 - `tests/test_puzzles.py`: all six generators, determinism, fallback
   behavior.
 - `tests/test_scheduler.py`: config CRUD and scheduler job lifecycle. Also
@@ -145,7 +148,7 @@ What's there:
 - **Overview**:
   - While a run is active, a "Generation in progress" banner with the
     current node, per-step elapsed, and completed/total step counter.
-  - A **Pipeline Progress** grid for all 12 nodes: green check for
+  - A **Pipeline Progress** grid for all 13 dashboard nodes: green check for
     completed (with the stored duration), blue spinner for in-flight
     (with live elapsed ticking), grey for pending.
   - The count **funnel** and the per-topic breakdown.
@@ -153,6 +156,10 @@ What's there:
     error message.
 - **Pipeline**: per-node count stats (ingest, embed, dedupe, select,
   draft, critique, editorial, puzzles).
+- **Report tab**: the optional per-article workflow report
+  (`issues/{slug}/workflow-report.html`). It iframes the live file, shows
+  whether it is partial or final, and offers an HTML download. With the
+  config switch off, the tab explains how to enable it.
 - **Drops tab**: every candidate that didn't make it into the paper, with
   stage (select quality filter, intra-dedup LLM, cross-issue similarity,
   etc.), a short reason (written by the LLM for select and dedup stages,

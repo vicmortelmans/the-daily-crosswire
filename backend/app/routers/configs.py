@@ -66,6 +66,9 @@ def update_config(
 
     data = payload.model_dump(exclude_unset=True)
     for key, value in data.items():
+        # This switch is non-nullable in the DB; ignore an explicit null.
+        if key == "include_workflow_report" and value is None:
+            continue
         setattr(config, key, value)
 
     # Validate the post-merge state and clean up the orphan schedule field.

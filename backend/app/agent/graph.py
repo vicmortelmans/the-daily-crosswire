@@ -8,6 +8,7 @@ from app.agent import nodes
 from app.agent.checkpoint import checkpoint_meta
 from app.agent.state import AgentState
 from app.services import log_buffer
+from app.services import workflow_report
 from app.utils.time import now_utc
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,12 @@ def _timed(name: str, fn):
             log_buffer.flush_to_db(issue_id)
 
         t0 = time.perf_counter()
-        result = await fn(state)
+        try:
+            result = await fn(state)
+        except Exception:
+            # Keep whatever report has been assembled so far. Best-effort.
+            workflow_report.write_if_due(state, final=False)
+            raise
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
         if isinstance(result, dict):
@@ -53,6 +59,19 @@ def _timed(name: str, fn):
             if issue_id:
                 checkpoint_meta(issue_id, meta)
                 log_buffer.flush_to_db(issue_id)
+            # Surface non-article nodes in the report appendix.
+            if name in {"puzzles", "render", "notify", "print"}:
+                section = meta.get(name)
+                if isinstance(section, dict):
+                    status = section.get("status") or ("failed" if section.get("error") else "ok")
+                    workflow_report.record_global(
+                        result,
+                        name,
+                        status,
+                        data={k: v for k, v in section.items() if k != "progress"},
+                    )
+            # Live report updates at every node boundary; final at the end.
+            workflow_report.write_if_due(result, final=(name == "print"))
         return result
 
     wrapper.__name__ = f"timed_{name}"

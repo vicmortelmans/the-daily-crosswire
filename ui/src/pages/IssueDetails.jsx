@@ -10,7 +10,9 @@ import {
   ChevronRight,
   Clock,
   Database,
+  Download,
   ExternalLink,
+  FileText,
   Filter,
   Loader2,
   ScrollText,
@@ -28,8 +30,8 @@ const PIPELINE_NODES = [
   "ingest_search",
   "embed",
   "dedupe",
-  "select",
   "fetch_articles",
+  "select",
   "draft",
   "critique",
   "editorial",
@@ -65,6 +67,7 @@ const TABS = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "pipeline", label: "Pipeline", icon: Database },
   { id: "drops", label: "Drops", icon: Filter },
+  { id: "report", label: "Report", icon: FileText },
   { id: "timings", label: "Timings", icon: Timer },
   { id: "logs", label: "Logs", icon: ScrollText },
   { id: "run", label: "Run info", icon: Clock },
@@ -422,6 +425,75 @@ function renderDropOrigin(snapshot) {
   return null;
 }
 
+function ReportView({ details }) {
+  const report = details.workflow_report ?? {};
+  const path = report.path ?? `issues/${details.slug}/workflow-report.html`;
+
+  if (!report.available) {
+    if (!report.enabled) {
+      return (
+        <div className="rounded-lg border border-neutral-200 bg-white p-5 text-sm text-neutral-600">
+          <p>Workflow reporting is disabled for this configuration.</p>
+          <p className="mt-2">
+            Enable <span className="font-medium text-neutral-900">Generate workflow report</span> in{" "}
+            <Link to={`/configs/${details.config_id}`} className="underline">
+              the configuration settings
+            </Link>{" "}
+            to create an article-by-article report on the next run.
+          </p>
+        </div>
+      );
+    }
+    const finished = ["ready", "drafted", "failed"].includes(details.status);
+    return (
+      <EmptyData>
+        {finished
+          ? "No workflow report was generated for this issue. It may predate the feature, or report writing failed."
+          : "The report is written as the workflow runs. It will appear here after the first workflow step completes."}
+      </EmptyData>
+    );
+  }
+
+  const cacheKey = report.generated_at ? encodeURIComponent(report.generated_at) : "report";
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-white px-4 py-3">
+        <span
+          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${
+            report.final
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-amber-200 bg-amber-50 text-amber-800"
+          }`}
+        >
+          {report.final ? "Final" : "Live / partial"}
+        </span>
+        <span className="text-sm text-neutral-600">
+          {report.article_count ?? 0} articles tracked
+          {report.generated_at ? ` · updated ${fmtIso(report.generated_at)}` : ""}
+        </span>
+        <div className="ml-auto flex gap-2">
+          <a href={`/${path}`} target="_blank" rel="noopener">
+            <Button variant="outline" size="sm">
+              <ExternalLink className="h-3.5 w-3.5" /> Open
+            </Button>
+          </a>
+          <a href={`/${path}`} download={`workflow-report-${details.slug}.html`}>
+            <Button variant="outline" size="sm">
+              <Download className="h-3.5 w-3.5" /> Download HTML
+            </Button>
+          </a>
+        </div>
+      </div>
+      <iframe
+        key={cacheKey}
+        title="Workflow report"
+        src={`/${path}?v=${cacheKey}`}
+        className="h-[85vh] w-full rounded-lg border border-neutral-200 bg-white"
+      />
+    </div>
+  );
+}
+
 function useNow(enabled) {
   // Ticks every second so elapsed-time counters repaint even between
   // dashboard refetches. Cheap; only enabled while a run is active.
@@ -444,8 +516,19 @@ export default function IssueDetails() {
     queryKey: ["issue-details", id],
     queryFn: () => api.getIssueDetails(id),
     refetchInterval: (query) => {
-      const s = query.state.data?.status;
-      return s === "running" || s === "pending" ? 2000 : false;
+      const data = query.state.data;
+      const s = data?.status;
+      if (s === "running" || s === "pending") return 2000;
+      // Keep polling briefly after render until the report writes its final
+      // artifact (the report writer runs after the render node).
+      const report = data?.workflow_report;
+      if (s === "ready" && report?.available && !report.final) {
+        const updated = Date.parse(report.generated_at || "");
+        // Poll for at most a minute after the last report write, so a failed
+        // final write cannot make the dashboard poll forever.
+        if (Number.isFinite(updated) && Date.now() - updated < 60000) return 2000;
+      }
+      return false;
     },
   });
 
@@ -702,6 +785,8 @@ export default function IssueDetails() {
       )}
 
       {tab === "drops" && <DropsView drops={d.drops ?? []} topics={topics} />}
+
+      {tab === "report" && <ReportView details={d} />}
 
       {tab === "timings" && (
         <div className="space-y-6">

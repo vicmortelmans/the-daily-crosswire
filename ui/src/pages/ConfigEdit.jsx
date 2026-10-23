@@ -82,6 +82,7 @@ function NewConfigForm({ onCreated }) {
   const [name, setName] = useState("");
   const [schedule, setSchedule] = useState(DEFAULT_SCHEDULE);
   const [includePuzzles, setIncludePuzzles] = useState(true);
+  const [includeWorkflowReport, setIncludeWorkflowReport] = useState(true);
   const [language, setLanguage] = useState("en");
   const [error, setError] = useState(null);
   const qc = useQueryClient();
@@ -100,6 +101,7 @@ function NewConfigForm({ onCreated }) {
     create.mutate({
       name: name.trim(),
       include_puzzles: includePuzzles,
+      include_workflow_report: includeWorkflowReport,
       language,
       ...pickSchedulePayload(schedule),
     });
@@ -156,6 +158,14 @@ function NewConfigForm({ onCreated }) {
             Include puzzles page
           </label>
 
+          <label className="flex items-center gap-2 text-sm text-neutral-800">
+            <Checkbox
+              checked={includeWorkflowReport}
+              onChange={(e) => setIncludeWorkflowReport(e.target.checked)}
+            />
+            Generate workflow report
+          </label>
+
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex justify-end">
@@ -176,6 +186,9 @@ function ExistingConfigForm({ config, onSaved, onDeleted }) {
   const [name, setName] = useState(config.name);
   const [schedule, setSchedule] = useState(scheduleFromConfig(config));
   const [includePuzzles, setIncludePuzzles] = useState(config.include_puzzles);
+  const [includeWorkflowReport, setIncludeWorkflowReport] = useState(
+    config.include_workflow_report ?? true,
+  );
   const [active, setActive] = useState(config.active);
   const [language, setLanguage] = useState(config.language ?? "en");
   const [newsletterEmails, setNewsletterEmails] = useState(
@@ -214,6 +227,7 @@ function ExistingConfigForm({ config, onSaved, onDeleted }) {
     save.mutate({
       name: name.trim(),
       include_puzzles: includePuzzles,
+      include_workflow_report: includeWorkflowReport,
       active,
       language,
       newsletter_emails: parsedEmails,
@@ -302,6 +316,13 @@ function ExistingConfigForm({ config, onSaved, onDeleted }) {
             <label className="flex items-center gap-2 text-sm text-neutral-800">
               <Checkbox checked={active} onChange={(e) => setActive(e.target.checked)} />
               Active (scheduler runs it)
+            </label>
+            <label className="flex items-center gap-2 text-sm text-neutral-800">
+              <Checkbox
+                checked={includeWorkflowReport}
+                onChange={(e) => setIncludeWorkflowReport(e.target.checked)}
+              />
+              Generate workflow report
             </label>
           </div>
 

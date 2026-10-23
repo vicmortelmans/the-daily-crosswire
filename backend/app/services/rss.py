@@ -44,8 +44,8 @@ def _clean_summary(raw: str | None) -> str | None:
     return cleaned[:2000] if cleaned else None
 
 
-def poll_feed(session: Session, feed: RSSFeed) -> int:
-    """Poll a single RSS feed, upsert new NewsItems, return count inserted."""
+def poll_feed(session: Session, feed: RSSFeed) -> list[NewsItem]:
+    """Poll a single RSS feed, upsert new NewsItems, return the inserted rows."""
     parsed = feedparser.parse(
         feed.url,
         etag=feed.last_etag or None,
@@ -57,7 +57,7 @@ def poll_feed(session: Session, feed: RSSFeed) -> int:
     if parsed.get("bozo") and bozo_exc and not parsed.entries:
         logger.warning("feedparser bozo for %s: %s", feed.url, bozo_exc)
 
-    added = 0
+    added_items: list[NewsItem] = []
     for entry in parsed.entries:
         url = entry.get("link")
         title = entry.get("title")
@@ -80,14 +80,14 @@ def poll_feed(session: Session, feed: RSSFeed) -> int:
             source_feed_url=feed.url,
         )
         session.add(item)
-        added += 1
+        added_items.append(item)
 
     feed.last_polled_at = now_utc()
     feed.last_etag = parsed.get("etag") or feed.last_etag
     feed.last_modified = parsed.get("modified") or feed.last_modified
 
     session.commit()
-    return added
+    return added_items
 
 
 def poll_all_feeds() -> dict:
@@ -97,9 +97,9 @@ def poll_all_feeds() -> dict:
         feeds = session.exec(select(RSSFeed)).all()
         for feed in feeds:
             try:
-                count = poll_feed(session, feed)
-                results[str(feed.id)] = count
-                logger.info("polled %s -> %d new", feed.url, count)
+                items = poll_feed(session, feed)
+                results[str(feed.id)] = len(items)
+                logger.info("polled %s -> %d new", feed.url, len(items))
             except Exception as exc:
                 session.rollback()
                 logger.exception("failed to poll %s", feed.url)

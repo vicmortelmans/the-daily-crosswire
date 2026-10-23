@@ -76,6 +76,7 @@ class ConfigRead(BaseModel):
     active: bool
     max_stories_per_topic: Optional[int] = None
     language: LanguageCode = "en"
+    include_workflow_report: bool = True
     newsletter_emails: list[EmailStr] = []
     created_at: datetime
     updated_at: datetime
@@ -95,6 +96,7 @@ class ConfigListItem(BaseModel):
     active: bool
     max_stories_per_topic: Optional[int] = None
     language: LanguageCode = "en"
+    include_workflow_report: bool = True
     created_at: datetime
     updated_at: datetime
 
@@ -109,6 +111,7 @@ class ConfigCreate(BaseModel):
     active: bool = True
     max_stories_per_topic: Optional[int] = Field(default=None, ge=1, le=50)
     language: LanguageCode = "en"
+    include_workflow_report: bool = True
     newsletter_emails: list[EmailStr] = []
 
     @model_validator(mode="after")
@@ -127,6 +130,7 @@ class ConfigUpdate(BaseModel):
     active: Optional[bool] = None
     max_stories_per_topic: Optional[int] = Field(default=None, ge=1, le=50)
     language: Optional[LanguageCode] = None
+    include_workflow_report: Optional[bool] = None
     newsletter_emails: Optional[list[EmailStr]] = None
 
 

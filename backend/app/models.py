@@ -31,6 +31,10 @@ class NewspaperConfig(SQLModel, table=True):
     # ISO 639-1 code: "en", "es", "fr", "it", "pt", "de", "nl". Drives draft +
     # editorial output language and template string localization.
     language: str = Field(default="en")
+    # When true, the agent keeps a full per-article workflow trace in memory
+    # and writes workflow-report.{html,json} into the issue directory. No
+    # trace data is persisted in the database.
+    include_workflow_report: bool = Field(default=True)
     # Email addresses that receive a PDF of the generated issue after
     # every successful render. Empty list disables delivery for this
     # config. Validated as EmailStr at the API boundary (schemas.py).

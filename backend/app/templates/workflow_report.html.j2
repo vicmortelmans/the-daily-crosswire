@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workflow report — {{ issue.slug or "issue" }}</title>
+<style>
+  :root { --ink:#171717; --muted:#6b7280; --line:#e5e7eb; --paper:#fff;
+          --green:#047857; --green-bg:#ecfdf5; --red:#b91c1c; --red-bg:#fef2f2;
+          --amber:#92400e; --amber-bg:#fffbeb; --blue:#1d4ed8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#f3f4f6; color:var(--ink);
+         font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .sheet { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+  .cover { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:28px 32px; }
+  .cover h1 { margin:0 0 6px; font-size:28px; letter-spacing:-.02em; }
+  .cover .kicker { text-transform:uppercase; letter-spacing:.12em; font-size:11px; color:var(--muted); font-weight:700; }
+  .cover .meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px 24px; margin-top:18px; }
+  .meta dt { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+  .meta dd { margin:2px 0 0; font-weight:600; }
+  .pill { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--line);
+          border-radius:999px; padding:2px 9px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+  .pill.final { color:var(--green); background:var(--green-bg); border-color:#a7f3d0; }
+  .pill.partial { color:var(--amber); background:var(--amber-bg); border-color:#fde68a; }
+  .pill.published, .pill.kept, .pill.ok, .pill.fetched, .pill.cached { color:var(--green); background:var(--green-bg); border-color:#a7f3d0; }
+  .pill.dropped, .pill.failed, .pill.draft_failed { color:var(--red); background:var(--red-bg); border-color:#fecaca; }
+  .pill.info, .pill.fallback, .pill.rewritten, .pill.skipped,
+  .pill.not_processed, .pill.partial, .pill.misconfigured { color:var(--amber); background:var(--amber-bg); border-color:#fde68a; }
+  .pill.not_reached { color:#9ca3af; background:#f9fafb; border-color:var(--line); }
+  .card { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:22px 26px; margin-top:20px; }
+  .card h2 { margin:0 0 12px; font-size:18px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:14px; }
+  .stat .label { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+  .stat .value { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; vertical-align:top; padding:7px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+  a { color:var(--blue); }
+  .toc a { text-decoration:none; }
+  .toc a:hover { text-decoration:underline; }
+  .article { margin-top:22px; }
+  .article-head { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .article h2 { margin:0; font-size:20px; line-height:1.3; }
+  .article .sub { color:var(--muted); font-size:12px; margin-top:5px; word-break:break-all; }
+  .outcome { border-left:4px solid var(--line); background:#fafafa; border-radius:8px; padding:10px 14px; margin:14px 0 18px; }
+  .outcome.published { border-left-color:var(--green); background:var(--green-bg); }
+  .outcome.dropped, .outcome.draft_failed { border-left-color:var(--red); background:var(--red-bg); }
+  .outcome.not_processed { border-left-color:var(--amber); background:var(--amber-bg); }
+  .outcome strong { display:block; font-size:14px; }
+  .outcome .reason { font-size:13px; margin-top:3px; }
+  .step { border-left:2px solid var(--line); margin-left:5px; padding:0 0 18px 18px; position:relative; }
+  .step:last-child { padding-bottom:0; }
+  .step::before { content:""; width:9px; height:9px; border-radius:50%; background:#d1d5db;
+                  position:absolute; left:-5.5px; top:5px; border:2px solid var(--paper); }
+  .step.kept::before, .step.published::before, .step.ok::before, .step.fetched::before, .step.cached::before { background:var(--green); }
+  .step.dropped::before, .step.failed::before { background:var(--red); }
+  .step.not_reached { opacity:.55; }
+  .step-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .step-name { font-weight:700; font-size:14px; }
+  .step-time { color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
+  .reason { margin-top:6px; font-size:13px; }
+  .reason .src { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.06em; margin-left:5px; }
+  .note { color:var(--muted); font-size:12px; margin-top:4px; }
+  pre.content { white-space:pre-wrap; overflow-wrap:anywhere; background:#f9fafb; border:1px solid var(--line);
+                border-radius:8px; padding:12px 14px; margin:8px 0 0; font:13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .draft-body { font-size:15px; line-height:1.65; margin:7px 0 0; }
+  .kv { display:grid; grid-template-columns:150px 1fr; gap:4px 14px; margin-top:7px; font-size:13px; }
+  .kv dt { color:var(--muted); }
+  .kv dd { margin:0; overflow-wrap:anywhere; }
+  .empty { color:var(--muted); font-style:italic; }
+  .warn { background:var(--amber-bg); border:1px solid #fde68a; color:var(--amber);
+          border-radius:8px; padding:10px 14px; font-size:13px; margin-top:12px; }
+  @media print {
+    body { background:#fff; }
+    .sheet { max-width:none; padding:0; }
+    .card, .cover { border:0; border-radius:0; padding:0 0 18px; break-inside:auto; }
+    .article { break-inside:avoid-page; }
+    .step { break-inside:avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+<div class="cover">
+  <div class="kicker">Workflow report</div>
+  <h1>{{ issue.config_name or "The Daily Crosswire" }}</h1>
+  <div style="margin-top:10px">
+    <span class="pill {{ 'final' if final else 'partial' }}">{{ "Final" if final else "Live / partial" }}</span>
+  </div>
+  <dl class="meta">
+    <div><dt>Issue date</dt><dd>{{ issue.issue_date or "-" }}</dd></div>
+    <div><dt>Slug</dt><dd>{{ issue.slug or "-" }}</dd></div>
+    <div><dt>Language</dt><dd>{{ issue.language or "-" }}</dd></div>
+    <div><dt>Lookback</dt><dd>{{ issue.lookback_start or "-" }} → {{ issue.lookback_end or "-" }}</dd></div>
+    <div><dt>Run started</dt><dd>{{ run.started_at or "-" }}</dd></div>
+    <div><dt>Run finished</dt><dd>{{ run.finished_at or "-" }}</dd></div>
+    <div><dt>Articles tracked</dt><dd>{{ articles|length }}</dd></div>
+  </dl>
+</div>
+
+{% if warnings %}
+<div class="warn"><strong>Warnings ({{ warnings|length }})</strong>
+  <ul style="margin:6px 0 0 18px; padding:0">
+  {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Run summary</h2>
+  <div class="stats">
+    <div class="stat"><div class="label">Published</div><div class="value">{{ counts.published }}</div></div>
+    <div class="stat"><div class="label">Dropped</div><div class="value">{{ counts.dropped }}</div></div>
+    <div class="stat"><div class="label">Draft failed</div><div class="value">{{ counts.draft_failed }}</div></div>
+    <div class="stat"><div class="label">Not processed</div><div class="value">{{ counts.not_processed }}</div></div>
+  </div>
+  {% if funnel %}
+  <table style="margin-top:18px">
+    <thead><tr><th>Funnel step</th><th>Count</th></tr></thead>
+    <tbody>
+    {% for key, value in funnel.items() %}
+      <tr><td>{{ key|replace("_", " ") }}</td><td>{{ value }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<div class="card toc">
+  <h2>Articles ({{ articles|length }})</h2>
+  {% if articles %}
+  <table>
+    <thead><tr><th>#</th><th>Article</th><th>Topic</th><th>Outcome</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for a in articles %}
+      <tr>
+        <td>{{ a.index }}</td>
+        <td><a href="#article-{{ a.index }}">{{ a.article.title or a.article.url or a.article.news_item_id }}</a></td>
+        <td>{{ a.article.topic_name or "-" }}</td>
+        <td><span class="pill {{ a.outcome.kind }}">{{ a.outcome.label }}</span></td>
+        <td>{{ a.outcome.reason or "-" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="empty">No articles have been recorded yet.</p>
+  {% endif %}
+</div>
+
+{% for a in articles %}
+<div class="card article" id="article-{{ a.index }}">
+  <div class="article-head">
+    <div>
+      <h2>{{ a.index }}. {{ a.article.title or "(no title)" }}</h2>
+      <div class="sub">
+        {{ a.article.source_domain or "-" }}
+        {% if a.article.url %} · <a href="{{ a.article.url }}" target="_blank" rel="noopener">{{ a.article.url }}</a>{% endif %}
+        {% if a.article.topic_name %} · topic: {{ a.article.topic_name }}{% endif %}
+        · id: {{ a.article.news_item_id }}
+      </div>
+    </div>
+    <span class="pill {{ a.outcome.kind }}">{{ a.outcome.label }}</span>
+  </div>
+
+  <div class="outcome {{ a.outcome.kind }}">
+    <strong>{{ a.outcome.label }}</strong>
+    {% if a.outcome.reason %}<div class="reason">{{ a.outcome.reason }}</div>{% endif %}
+  </div>
+
+  {% for step in a.steps %}
+  <div class="step {{ step.status }}">
+    <div class="step-head">
+      <span class="step-name">{{ step_labels.get(step.step, step.step) }}</span>
+      <span class="pill {{ step.status }}">{{ status_labels.get(step.status, step.status) }}</span>
+      {% if step.at %}<span class="step-time">{{ step.at }}</span>{% endif %}
+    </div>
+
+    {% if step.reason %}
+      <div class="reason">{{ step.reason }}
+        {% if step.reason_source %}<span class="src">{{ "AI" if step.reason_source == "ai" else "system" }}</span>{% endif %}
+      </div>
+    {% endif %}
+
+    {% set d = step.data or {} %}
+    {% if step.step == "retrieved" %}
+      {% if d.via or d.origin %}<div class="note">via {{ d.via or "ingest" }}{% if d.origin %}: <span style="font-family:ui-monospace,monospace">{{ d.origin }}</span>{% endif %}</div>{% endif %}
+      {% if d.synthesized %}<div class="note">Synthesized from the stored news item; not fetched during this run.</div>{% endif %}
+      {% if d.published_at %}<div class="note">Published: {{ d.published_at }}</div>{% endif %}
+      {% if d.summary %}<pre class="content">{{ d.summary }}</pre>{% endif %}
+    {% elif step.step == "article_fetch" %}
+      {% if d.char_count is defined %}<div class="note">{{ d.char_count }} characters retained{% if d.truncated %} (capped by article_max_characters){% endif %}</div>{% endif %}
+      {% if d.text %}<pre class="content">{{ d.text }}</pre>{% elif d.error %}<div class="note">{{ d.error }}</div>{% endif %}
+    {% elif step.step == "draft_input" %}
+      {% if d.source_kind %}<div class="note">Source used: {{ d.source_kind }}{% if d.char_count is defined %} · {{ d.char_count }} characters{% endif %}</div>{% endif %}
+      {% if d.source_text %}<pre class="content">{{ d.source_text }}</pre>{% endif %}
+    {% elif step.step == "draft" %}
+      {% if d.rendered_title %}<p><strong>{{ d.rendered_title }}</strong>{% if d.is_lead %} <span class="pill info">Lead</span>{% endif %}</p>{% endif %}
+      {% if d.body %}<p class="draft-body">{{ d.body }}</p>{% endif %}
+    {% elif step.step == "critique" %}
+      {% if d.before and d.after and d.before != d.after %}
+        <div class="note">Before rewrite</div><pre class="content">{{ d.before }}</pre>
+        <div class="note">After rewrite</div><pre class="content">{{ d.after }}</pre>
+      {% elif d.body %}<pre class="content">{{ d.body }}</pre>{% endif %}
+    {% elif step.step in ("select", "select_cap", "intra_dedup_llm", "intra_dedup_emb", "topic_cap", "lookback_filter") %}
+      {% if d.batch_index %}<div class="note">Batch {{ d.batch_index }}/{{ d.batch_total }}{% if d.rank %} · rank {{ d.rank }}{% endif %}{% if d.is_lead %} · selected as lead{% endif %}</div>{% endif %}
+      {% if d.similarity is defined and d.similarity is not none %}<div class="note">Similarity: {{ "%.3f"|format(d.similarity) }}{% if d.matched_title %} · {{ d.matched_title }}{% endif %}</div>{% endif %}
+      {% if d.matched_kept_id %}<div class="note">Matched kept item: <span style="font-family:ui-monospace,monospace">{{ d.matched_kept_id }}</span></div>{% endif %}
+      {% if d.max_kept_per_batch %}<div class="note">Per-batch limit: {{ d.max_kept_per_batch }}</div>{% endif %}
+      {% if d.max_stories_per_topic %}<div class="note">Limit: {{ d.max_stories_per_topic }}</div>{% endif %}
+      {% if d.lookback_start %}<div class="note">Window starts: {{ d.lookback_start }}</div>{% endif %}
+    {% elif step.step == "embedded" %}
+      {% if d.model %}<div class="note">Model: {{ d.model }}</div>{% endif %}
+      {% if d.error %}<div class="note">{{ d.error }}</div>{% endif %}
+    {% elif step.step == "published" %}
+      {% if d.topic_name %}<div class="note">Topic: {{ d.topic_name }}{% if d.is_lead %} · lead story{% endif %}</div>{% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+
+{% if globals %}
+<div class="card">
+  <h2>Run-level events</h2>
+  {% for g in globals %}
+  <div class="step {{ g.status }}">
+    <div class="step-head">
+      <span class="step-name">{{ g.step|replace("_", " ")|title }}</span>
+      <span class="pill {{ g.status }}">{{ status_labels.get(g.status, g.status) }}</span>
+      {% if g.at %}<span class="step-time">{{ g.at }}</span>{% endif %}
+    </div>
+    {% if g.reason %}<div class="reason">{{ g.reason }}</div>{% endif %}
+    {% if g.data %}
+      {% if g.data.text %}<pre class="content">{{ g.data.text }}</pre>{% endif %}
+      {% if g.data.status %}<div class="note">Status: {{ g.data.status }}</div>{% endif %}
+      {% if g.data.word_count is defined %}<div class="note">Words: {{ g.data.word_count }}</div>{% endif %}
+      {% if g.data.items_new is defined %}<div class="note">New items: {{ g.data.items_new }} · feeds: {{ g.data.feeds_polled|default("-") }} · failures: {{ g.data.failures|default("-") }}</div>{% endif %}
+      {% if g.data.items_added is defined %}<div class="note">Items added: {{ g.data.items_added }} · queries: {{ g.data.topics_queried|default("-") }} · failures: {{ g.data.failures|default("-") }}</div>{% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card" style="color:var(--muted); font-size:12px">
+  Generated by The Daily Crosswire. This report is written while the workflow runs and is
+  complete only when the badge above says <strong>Final</strong>.
+</div>
+
+</div>
+</body>
+</html>
