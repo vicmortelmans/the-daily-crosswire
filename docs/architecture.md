@@ -111,9 +111,11 @@ LangGraph graph. Nodes in order:
    stories prior to drafting. Uses `trafilatura` (with fallback heuristics)
    over async HTTP with realistic browser headers and bounded concurrency.
    Extracted text is cached in `news_items.article_text` so repeat runs skip
-   external requests. If a site is blocked, paywalled, or times out, the
-   node records status `fallback_summary` and gracefully falls back to the
-   RSS/search snippet.
+   external requests, and is hard-capped at `ARTICLE_MAX_CHARACTERS`
+   (default 3000) to keep select/draft prompts within token and timeout
+   budgets. If a site is blocked, paywalled, or times out, the node records
+   status `fallback_summary` and gracefully falls back to the RSS/search
+   snippet.
 
 7. **`draft`**: per selected story, the LLM writes a replacement headline
    (< 70 chars) and a 100-150 word body in cause-and-effect form in the

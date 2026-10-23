@@ -65,9 +65,12 @@ class Settings(BaseSettings):
     rss_poll_interval_hours: int = 1
 
     # Full article extraction settings for the fetch_articles node.
-    # Fetches full article bodies for selected candidates prior to drafting.
+    # Fetches full article bodies for candidates before selection.
     article_fetch_timeout_seconds: float = 10.0
-    article_max_characters: int = 12000
+    # Hard cap on extracted body length, applied before the text is cached in
+    # news_items.article_text. Long-reads/liveblogs otherwise bloat the select
+    # prompt and can time out the LLM. Also bounds the draft source text.
+    article_max_characters: int = 3000
     article_fetch_concurrency: int = 5
 
     issues_dir: Path = Path("/app/issues")

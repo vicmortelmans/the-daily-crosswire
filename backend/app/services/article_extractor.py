@@ -5,6 +5,8 @@ from typing import Optional
 
 import httpx
 
+from app.config import settings
+
 try:
     import trafilatura
 
@@ -86,6 +88,14 @@ def extract_text_from_html(html: str) -> Optional[str]:
     cleaned = _WS_RE.sub("\n\n", text.strip())
     if len(cleaned.split()) < MIN_WORD_COUNT:
         return None
+
+    # Hard cap the stored body. Trafilatura happily returns entire long-reads
+    # and liveblogs (50k+ chars); feeding that into select/draft bloats the
+    # prompt and can push the LLM call past its timeout. 3000 chars is plenty
+    # for quality selection and a 100-150 word summary.
+    max_chars = settings.article_max_characters
+    if max_chars > 0 and len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars].rstrip()
 
     return cleaned
 

@@ -2,6 +2,7 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from app.config import settings
 from app.services.article_extractor import (
     extract_text_from_html,
     fetch_article_text,
@@ -36,6 +37,29 @@ def test_extract_text_clean_article():
     assert "Copyright" not in text
     assert "Politics" not in text
     assert len(text.split()) >= MIN_WORD_COUNT
+
+
+def test_extract_text_truncates_long_body():
+    """Long-read/liveblog bodies are capped before they reach the DB and the
+    select/draft prompts."""
+    paragraph = (
+        "The city council met on Tuesday to discuss the new budget and approved "
+        "additional funding for road repairs across the district"
+    )
+    html = (
+        "<html><body><article>"
+        + "".join(f"<p>{paragraph}, section {i}.</p>" for i in range(80))
+        + "</article></body></html>"
+    )
+
+    text = extract_text_from_html(html)
+    assert text is not None
+    assert len(text) <= settings.article_max_characters
+    assert len(text) > MIN_WORD_COUNT
+    assert text.startswith("The city council met on Tuesday")
+    # The cut must actually happen: the source is ~10k chars, so the result
+    # should sit right at the cap (allow a few chars for `.rstrip()`).
+    assert len(text) >= settings.article_max_characters - 100
 
 
 def test_extract_text_too_short_or_empty():
