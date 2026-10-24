@@ -56,6 +56,9 @@
         {% if lead.body %}
         <p><span class="dropcap">{{ lead.body[0] }}</span>{{ lead.body[1:] }}</p>
         {% endif %}
+        {% if lead.quote %}
+        <blockquote class="pullquote">&ldquo;{{ lead.quote }}&rdquo;{% if lead.quote_attribution %}<cite>&mdash; {{ lead.quote_attribution }}</cite>{% endif %}</blockquote>
+        {% endif %}
         {% if lead.original_url %}
         <p class="small-note">{{ strings.source }}: <a href="{{ lead.original_url }}" target="_blank" rel="noopener">{{ lead.source_domain or "link" }}</a></p>
         {% endif %}
@@ -75,6 +78,9 @@
           <p class="byline">{{ strings.by }} {{ strings.desk_wire }} &middot; {{ beat.topic_name }}</p>
           {% if story.body %}
           <p>{{ story.body }}</p>
+          {% endif %}
+          {% if story.quote %}
+          <blockquote class="pullquote pullquote-compact">&ldquo;{{ story.quote }}&rdquo;{% if story.quote_attribution %}<cite>&mdash; {{ story.quote_attribution }}</cite>{% endif %}</blockquote>
           {% endif %}
           {% if story.original_url %}
           <p class="small-note">{{ strings.source }}: <a href="{{ story.original_url }}" target="_blank" rel="noopener">{{ story.source_domain or "link" }}</a></p>

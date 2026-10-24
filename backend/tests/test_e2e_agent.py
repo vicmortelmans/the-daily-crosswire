@@ -55,6 +55,18 @@ def test_agent_end_to_end(client, clean_db):
             assert d.get("rendered_title")
             assert d.get("body")
             assert "!" not in d["body"], f"exclamation leaked into draft: {d['rendered_title']}"
+            if d.get("quote"):
+                # Every printed quote must trace back to a literal span of the
+                # fetched article; the translation is derived from that span.
+                assert d.get("quote_verified") is True
+                assert d.get("quote_source")
+                item = s.get(NewsItem, uuid.UUID(d["news_item_id"]))
+                assert item is not None and item.article_text
+                from app.agent.nodes import _normalize_for_match
+
+                assert _normalize_for_match(d["quote_source"]) in _normalize_for_match(
+                    item.article_text
+                ), f"pull quote is not a verbatim span: {d['rendered_title']}"
 
         if issue.drafts_json.get("drafts"):
             leads = [d for d in issue.drafts_json["drafts"] if d.get("is_lead")]

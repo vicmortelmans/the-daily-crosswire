@@ -84,6 +84,11 @@ def _seed(s: Session) -> dict:
                 "is_lead": True,
                 "original_title": items[0].title,
                 "original_url": items[0].url,
+                "quote": "We are against paying for them twice.",
+                "quote_source": "We are against paying for them twice.",
+                "quote_attribution": "Ana Ruiz",
+                "quote_verified": True,
+                "quote_translated": False,
             },
             {
                 "news_item_id": str(items[1].id),
@@ -94,6 +99,11 @@ def _seed(s: Session) -> dict:
                 "is_lead": False,
                 "original_title": items[1].title,
                 "original_url": items[1].url,
+                "quote": "Estamos en contra de pagarlas dos veces.",
+                "quote_source": "We are against paying for them twice.",
+                "quote_attribution": "Ana Ruiz",
+                "quote_verified": True,
+                "quote_translated": True,
             },
             {
                 "news_item_id": str(items[2].id),
@@ -154,6 +164,13 @@ def test_render_writes_files_and_marks_ready(seeded):
     assert "Open source model hits new retrieval benchmark" in html  # second story
     assert "Tech" in html and "Games" in html  # beat headings
     assert "Editorial" in html
+    # Pull quotes render for leads (full style) and secondary stories
+    # (compact style), with the translated text and the attribution.
+    assert 'class="pullquote"' in html
+    assert 'class="pullquote pullquote-compact"' in html
+    assert "We are against paying for them twice." in html
+    assert "Estamos en contra de pagarlas dos veces." in html
+    assert "Ana Ruiz" in html
     # Games markers only render when puzzles_html is set; this fixture
     # has no puzzles, so assert the negative.
     assert "GAMES_PAGE_START" not in html

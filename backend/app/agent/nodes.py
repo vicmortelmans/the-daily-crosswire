@@ -2,8 +2,10 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+import re
 import tempfile
 import time
+import unicodedata
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
@@ -1610,6 +1612,417 @@ async def fetch_articles(state: AgentState) -> AgentState:
 
 
 # ---------------------------------------------------------------------------
+# Node 6b: quote
+#
+# Pull quotes are deliberately a separate inference from `draft`. Drafting
+# already carries voice, length, and translation rules; "is there one line
+# here worth printing on its own?" is a different decision, and keeping it
+# separate is what makes the verbatim guarantee possible: the pick call must
+# return a literal substring, which is verified mechanically before the
+# translation call ever sees it.
+# ---------------------------------------------------------------------------
+
+
+class _QuotePickOutput(BaseModel):
+    quote: Optional[str] = Field(
+        default=None,
+        description="Exact character-for-character substring of the article, 6-35 words, or null.",
+    )
+    attribution: Optional[str] = Field(
+        default=None,
+        description="Speaker or document named in the article, or null for author narration.",
+    )
+    reason: Optional[str] = Field(
+        default=None,
+        description="One short sentence on why this line works, or why none does.",
+    )
+
+
+class _QuoteTranslateOutput(BaseModel):
+    quote: str = Field(description="The quote rendered in the requested output language.")
+    attribution: Optional[str] = Field(
+        default=None,
+        description="Attribution rendered in the requested output language, or null.",
+    )
+
+
+# Typographic variants collapsed for substring matching only. The printed
+# quote always keeps the source's own characters.
+_QUOTE_CHAR_MAP = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201a": "'",
+        "\u201b": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u201e": '"',
+        "\u201f": '"',
+        "\u00ab": '"',
+        "\u00bb": '"',
+        "\u2010": "-",
+        "\u2011": "-",
+        "\u2012": "-",
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2212": "-",
+        "\u00a0": " ",
+        "\u2009": " ",
+        "\u202f": " ",
+        "\u200b": "",
+    }
+)
+_QUOTE_WS_RE = re.compile(r"\s+")
+_QUOTE_DIGITS_RE = re.compile(r"\d+")
+
+
+def _format_safe(template: str, **values: str) -> str:
+    """Substitute {placeholders} without str.format().
+
+    Article text routinely contains braces; str.format() would treat them as
+    format fields and raise, so sequential replacement is used instead.
+    """
+    out = template
+    for key, value in values.items():
+        out = out.replace("{" + key + "}", str(value))
+    return out
+
+
+def _normalize_for_match(text: Optional[str]) -> str:
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFKC", text)
+    normalized = normalized.translate(_QUOTE_CHAR_MAP)
+    normalized = _QUOTE_WS_RE.sub(" ", normalized)
+    return normalized.strip().casefold()
+
+
+def _verify_quote(quote: Optional[str], article_text: Optional[str]) -> bool:
+    """True when `quote` is a verbatim span of `article_text` after
+    whitespace/typography normalization.
+
+    The model is told to copy exactly, but a paraphrase must never reach the
+    printed page as an attributed quotation. This check is the enforcement.
+    """
+    needle = _normalize_for_match(quote)
+    return bool(needle) and needle in _normalize_for_match(article_text)
+
+
+def _quote_digit_tokens(text: str) -> set[str]:
+    return set(_QUOTE_DIGITS_RE.findall(text or ""))
+
+
+def _translation_ok(source: str, display: str) -> bool:
+    """Tripwire for the translation pass: non-empty, not a runaway expansion,
+    and every digit sequence from the source survives.
+
+    A rejected translation is not fatal: the node falls back to printing the
+    verified source-language quote and records a warning.
+    """
+    if not (display or "").strip():
+        return False
+    source_words = len(source.split())
+    display_words = len(display.split())
+    if display_words < 3:
+        return False
+    if display_words > max(settings.quote_max_words, source_words * 2 + 5):
+        return False
+    return not (_quote_digit_tokens(source) - _quote_digit_tokens(display))
+
+
+async def quote(state: AgentState) -> AgentState:
+    """Pick one pull quote per selected story, then translate it.
+
+    Best-effort by design: a failed pick, an unverifiable quote, or a bad
+    translation never removes the story. The story simply ships without a
+    quote, and the reason is recorded in the workflow report.
+    """
+    meta_q = state.setdefault("meta", {}).setdefault("quote", {})
+    meta_q.update(
+        {
+            "status": "ok",
+            "attempted": 0,
+            "picked": 0,
+            "verified": 0,
+            "unverified": 0,
+            "no_quote": 0,
+            "translated": 0,
+            "quoted": 0,
+            "failed": 0,
+            "skipped_no_text": 0,
+        }
+    )
+    selected = state.get("selected_by_topic") or {}
+    progress = meta_q["progress"] = {
+        "stories_total": 0,
+        "stories_done": 0,
+        "current_title": None,
+    }
+
+    if not selected:
+        meta_q["status"] = "skipped"
+        return state
+
+    with Session(engine) as s:
+        config = s.get(NewspaperConfig, _uuid(state["config_id"]))
+        lang_name = language_name(getattr(config, "language", "en") if config else "en")
+        topic_ids = [_uuid(i) for i in state.get("topic_ids", [])]
+        topics_by_id = {
+            str(t.id): t for t in s.exec(select(Topic).where(Topic.id.in_(topic_ids))).all()
+        }
+        plan: list[tuple[str, str, NewsItem]] = []
+        for topic_id, item_ids in selected.items():
+            topic = topics_by_id.get(topic_id)
+            if topic is None or not item_ids:
+                continue
+            items = s.exec(
+                select(NewsItem).where(NewsItem.id.in_([_uuid(i) for i in item_ids]))
+            ).all()
+            for item in items:
+                plan.append((topic_id, topic.name, item))
+
+    progress["stories_total"] = len(plan)
+    _checkpoint_progress(state)
+    if not plan:
+        meta_q["status"] = "skipped"
+        return state
+
+    if not chat_llm_configured():
+        _warn(state, "chat LLM not configured; pull quotes skipped.")
+        meta_q["status"] = "skipped"
+        return state
+
+    pick_llm = get_structured_llm(_QuotePickOutput, temperature=0)
+    translate_llm = get_structured_llm(_QuoteTranslateOutput, temperature=0)
+    sem = asyncio.Semaphore(max(1, settings.quote_concurrency))
+    quotes: dict[str, dict] = {}
+
+    async def _pick_one(topic_id: str, topic_name: str, item: NewsItem) -> None:
+        progress["current_title"] = (item.title or "")[:80]
+        _checkpoint_progress(state)
+        report_service.ensure_article(state, item, topic_name=topic_name, synthesized=True)
+
+        def _finish(status: str, reason: str, data: Optional[dict], reason_source: str) -> None:
+            report_service.record_event(
+                state,
+                news_item_id=str(item.id),
+                step="quote",
+                status=status,
+                topic_id=topic_id,
+                topic_name=topic_name,
+                reason=reason,
+                reason_source=reason_source,
+                data=data,
+            )
+            progress["stories_done"] += 1
+            _checkpoint_progress(state)
+
+        source_text = (item.article_text or "")[: settings.article_max_characters]
+        if not source_text.strip():
+            meta_q["skipped_no_text"] += 1
+            _finish("skipped", "No full article text; quote skipped.", None, "system")
+            return
+
+        meta_q["attempted"] += 1
+        pick_prompt = _format_safe(
+            prompts.QUOTE_PICK_INSTRUCTION,
+            title=item.title or "",
+            article_text=source_text,
+        )
+        try:
+            async with sem:
+                pick: _QuotePickOutput = await _invoke_with_parse_retry(
+                    pick_llm,
+                    [
+                        SystemMessage(content=prompts.QUOTE_SYSTEM_PROMPT),
+                        HumanMessage(content=pick_prompt),
+                    ],
+                    state=state,
+                    stage="quote",
+                )
+        except LLM_CATCHABLE as exc:
+            meta_q["failed"] += 1
+            _warn(state, f"quote pick failed for {item.id} ({type(exc).__name__}): {exc}")
+            _finish("failed", f"Quote pick failed: {type(exc).__name__}: {exc}", None, "system")
+            return
+
+        quote_text = (pick.quote or "").strip()
+        reason = (pick.reason or "").strip()
+        title_norm = _normalize_for_match(item.title)
+        if quote_text and title_norm and _normalize_for_match(quote_text) in title_norm:
+            meta_q["no_quote"] += 1
+            _finish(
+                "no_quote",
+                "Candidate repeated the headline.",
+                {"candidate": quote_text},
+                "system",
+            )
+            return
+        word_count = len(quote_text.split())
+        in_bounds = settings.quote_min_words <= word_count <= settings.quote_max_words
+        if not quote_text or not in_bounds:
+            meta_q["no_quote"] += 1
+            if quote_text:
+                why = (
+                    f"Candidate was {word_count} words; outside "
+                    f"{settings.quote_min_words}-{settings.quote_max_words}."
+                )
+            else:
+                why = reason or "No line qualified as a pull quote."
+            _finish(
+                "no_quote",
+                why,
+                {"candidate": quote_text or None, "word_count": word_count},
+                "system" if quote_text else "ai",
+            )
+            return
+        meta_q["picked"] += 1
+
+        if not _verify_quote(quote_text, source_text):
+            # One repair attempt: tell the model its answer was not found in
+            # the text and ask for a literal span instead of a paraphrase.
+            repair_prompt = pick_prompt + (
+                "\n\nYour previous quote was not found verbatim in the article text:\n"
+                f"{quote_text}\n"
+                "Return only a character-for-character substring of the article text "
+                "(6-35 words), or null."
+            )
+            try:
+                async with sem:
+                    pick = await _invoke_with_parse_retry(
+                        pick_llm,
+                        [
+                            SystemMessage(content=prompts.QUOTE_SYSTEM_PROMPT),
+                            HumanMessage(content=repair_prompt),
+                        ],
+                        state=state,
+                        stage="quote",
+                    )
+                quote_text = (pick.quote or "").strip()
+                word_count = len(quote_text.split())
+                reason = (pick.reason or "").strip() or reason
+            except LLM_CATCHABLE as exc:
+                meta_q["failed"] += 1
+                _warn(state, f"quote repair failed for {item.id} ({type(exc).__name__}): {exc}")
+                _finish(
+                    "failed", f"Quote repair failed: {type(exc).__name__}: {exc}", None, "system"
+                )
+                return
+            in_bounds = settings.quote_min_words <= word_count <= settings.quote_max_words
+            title_norm = _normalize_for_match(item.title)
+            if (
+                not quote_text
+                or not in_bounds
+                or not _verify_quote(quote_text, source_text)
+                or (title_norm and _normalize_for_match(quote_text) in title_norm)
+            ):
+                meta_q["unverified"] += 1
+                _finish(
+                    "unverified",
+                    "Quote could not be matched verbatim in the source article; dropped.",
+                    {"candidate": quote_text or None, "word_count": word_count},
+                    "system",
+                )
+                return
+        meta_q["verified"] += 1
+
+        attribution = (pick.attribution or "").strip() or None
+        display = quote_text
+        display_attribution = attribution
+        translate_prompt = _format_safe(
+            prompts.QUOTE_TRANSLATE_INSTRUCTION,
+            language_name=lang_name,
+            quote=quote_text,
+            attribution=attribution or "(none)",
+        )
+        try:
+            async with sem:
+                translated: _QuoteTranslateOutput = await _invoke_with_parse_retry(
+                    translate_llm,
+                    [
+                        SystemMessage(content=prompts.QUOTE_SYSTEM_PROMPT),
+                        HumanMessage(content=translate_prompt),
+                    ],
+                    state=state,
+                    stage="quote_translate",
+                )
+            candidate_display = (translated.quote or "").strip()
+            if _translation_ok(quote_text, candidate_display):
+                display = candidate_display
+                display_attribution = (translated.attribution or "").strip() or attribution
+            else:
+                _warn(
+                    state,
+                    f"quote translation rejected for {item.id}; printing the source-language quote.",
+                )
+        except LLM_CATCHABLE as exc:
+            _warn(
+                state,
+                f"quote translation failed for {item.id} ({type(exc).__name__}): {exc}; "
+                "printing the source-language quote.",
+            )
+
+        translated_flag = _normalize_for_match(display) != _normalize_for_match(quote_text)
+        if translated_flag:
+            meta_q["translated"] += 1
+        quotes[str(item.id)] = {
+            "quote": display,
+            "quote_source": quote_text,
+            "quote_attribution": display_attribution,
+            "quote_verified": True,
+            "quote_translated": translated_flag,
+        }
+        meta_q["quoted"] += 1
+        _finish(
+            "ok",
+            reason or "Pull quote selected and verified against the source.",
+            {
+                "quote": display,
+                "quote_source": quote_text,
+                "attribution": display_attribution,
+                "translated": translated_flag,
+                "word_count": word_count,
+            },
+            "ai",
+        )
+
+    results = await asyncio.gather(
+        *(_pick_one(topic_id, topic_name, item) for topic_id, topic_name, item in plan),
+        return_exceptions=True,
+    )
+    for (topic_id, topic_name, item), result in zip(plan, results):
+        if isinstance(result, Exception):
+            meta_q["failed"] += 1
+            _warn(state, f"quote node error for {item.id}: {type(result).__name__}: {result}")
+            report_service.record_event(
+                state,
+                news_item_id=str(item.id),
+                step="quote",
+                status="failed",
+                topic_id=topic_id,
+                topic_name=topic_name,
+                reason=f"{type(result).__name__}: {result}",
+                reason_source="system",
+            )
+
+    progress["current_title"] = None
+    _checkpoint_progress(state)
+    state["quotes"] = quotes
+    logger.info(
+        "agent quote: %d of %d stories quoted (%d translated, %d no quote, "
+        "%d unverified, %d failed, %d no text)",
+        len(quotes),
+        len(plan),
+        meta_q["translated"],
+        meta_q["no_quote"],
+        meta_q["unverified"],
+        meta_q["failed"],
+        meta_q["skipped_no_text"],
+    )
+    return state
+
+
+# ---------------------------------------------------------------------------
 # Node 7: draft
 
 
@@ -1698,13 +2111,24 @@ async def draft(state: AgentState) -> AgentState:
                         "url": report_service.safe_url(item.url),
                     },
                 )
-                user_msg = prompts.DRAFT_INSTRUCTION.format(
+                quote_info = (state.get("quotes") or {}).get(str(item.id)) or {}
+                user_msg = _format_safe(
+                    prompts.DRAFT_INSTRUCTION,
                     topic_name=topic.name,
                     title=item.title or "",
                     url=item.url,
                     summary=source_text,
                     language_name=lang_name,
                 )
+                if quote_info.get("quote"):
+                    # The pull quote is printed separately, in the issue
+                    # language. Keep the body from repeating it word for word.
+                    user_msg += (
+                        "\n\nA pull quote from this source is printed next to your story:\n"
+                        f"\"{quote_info['quote']}\"\n"
+                        "Do not reproduce that sentence verbatim in the body. You may cover "
+                        "the same fact in your own words."
+                    )
                 try:
                     out: _DraftOutput = await _invoke_with_parse_retry(
                         llm,
@@ -1754,6 +2178,11 @@ async def draft(state: AgentState) -> AgentState:
                         is_lead=is_lead,
                         original_title=item.title or "",
                         original_url=item.url,
+                        quote=quote_info.get("quote"),
+                        quote_source=quote_info.get("quote_source"),
+                        quote_attribution=quote_info.get("quote_attribution"),
+                        quote_verified=bool(quote_info.get("quote_verified")),
+                        quote_translated=bool(quote_info.get("quote_translated")),
                     )
                 )
                 report_service.record_event(
@@ -1769,6 +2198,7 @@ async def draft(state: AgentState) -> AgentState:
                         "rendered_title": rendered_title,
                         "body": rendered_body,
                         "is_lead": is_lead,
+                        "quote": quote_info.get("quote"),
                     },
                 )
                 logger.info(
@@ -1821,6 +2251,7 @@ def _draft_passthrough(state: AgentState) -> AgentState:
                 rendered_title = item.title or ""
                 rendered_body = source_text
                 is_lead = str(item.id) == lead_id
+                quote_info = (state.get("quotes") or {}).get(str(item.id)) or {}
                 drafts.append(
                     DraftDict(
                         news_item_id=str(item.id),
@@ -1831,6 +2262,11 @@ def _draft_passthrough(state: AgentState) -> AgentState:
                         is_lead=is_lead,
                         original_title=item.title or "",
                         original_url=item.url,
+                        quote=quote_info.get("quote"),
+                        quote_source=quote_info.get("quote_source"),
+                        quote_attribution=quote_info.get("quote_attribution"),
+                        quote_verified=bool(quote_info.get("quote_verified")),
+                        quote_translated=bool(quote_info.get("quote_translated")),
                     )
                 )
                 report_service.record_event(

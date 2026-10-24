@@ -192,6 +192,11 @@
     {% elif step.step == "article_fetch" %}
       {% if d.char_count is defined %}<div class="note">{{ d.char_count }} characters retained{% if d.truncated %} (capped by article_max_characters){% endif %}</div>{% endif %}
       {% if d.text %}<pre class="content">{{ d.text }}</pre>{% elif d.error %}<div class="note">{{ d.error }}</div>{% endif %}
+    {% elif step.step == "quote" %}
+      {% if d.quote %}<div class="note">Printed quote ({{ "translated" if d.translated else "source language" }}):</div><pre class="content">{{ d.quote }}</pre>{% endif %}
+      {% if d.quote_source and d.quote_source != d.quote %}<div class="note">Verified source span:</div><pre class="content">{{ d.quote_source }}</pre>{% endif %}
+      {% if d.attribution %}<div class="note">Attribution: {{ d.attribution }}</div>{% endif %}
+      {% if d.candidate and not d.quote %}<div class="note">Rejected candidate: {{ d.candidate }}</div>{% endif %}
     {% elif step.step == "draft_input" %}
       {% if d.source_kind %}<div class="note">Source used: {{ d.source_kind }}{% if d.char_count is defined %} · {{ d.char_count }} characters{% endif %}</div>{% endif %}
       {% if d.source_text %}<pre class="content">{{ d.source_text }}</pre>{% endif %}

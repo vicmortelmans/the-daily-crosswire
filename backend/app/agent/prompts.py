@@ -204,6 +204,74 @@ Return JSON matching the requested schema.
 """
 
 
+QUOTE_SYSTEM_PROMPT = """You are a newspaper editor choosing and translating
+pull quotes for a small independent paper called The Daily Crosswire.
+
+Rules (strict):
+- When picking, copy a quote verbatim from the article. Never paraphrase and
+  never invent text.
+- When translating, translate only the verified quote and keep every claim,
+  number, and name intact.
+- Return null when no line qualifies. An empty answer is a valid editorial
+  call, and better than a weak quote.
+- No hype, no exclamation marks, no emoji, no superlatives.
+- When asked for structured output, follow the schema exactly.
+"""
+
+
+QUOTE_PICK_INSTRUCTION = """You are choosing ONE pull quote from a news
+article for a printed newspaper page. A pull quote is a short, striking line
+printed on its own. Not every article has one: an empty answer is allowed and
+preferred over a weak quote.
+
+Source title: {title}
+Article text (verbatim): {article_text}
+
+Pick rules:
+- The quote MUST be an exact, character-for-character substring of the
+  article text above. Copy it as-is: same language, same spelling, same
+  punctuation. Do not translate, do not fix typos, do not join separate
+  sentences, do not add ellipses or brackets.
+- 6 to 35 words. It must make sense on its own, without the surrounding
+  paragraph.
+- Prefer a direct quotation from a named person or document. An author's own
+  sentence is acceptable only if it states a concrete claim, decision,
+  number, or consequence.
+- It should sound like something worth repeating: a judgment, a warning, a
+  promise, a plain-spoken explanation, or a sharp fact.
+- Not the headline or standfirst. Not a caption, photo credit, or boilerplate
+  ("This article was originally published...", subscription pitches).
+- Not a description of the article itself, and not promotional copy.
+- Default to null. Do not stretch a merely descriptive sentence into a quote.
+
+Return JSON:
+- quote: the exact substring, or null.
+- attribution: the speaker or document named in the article for this quote,
+  or null if it is the author's own narration.
+- reason: one short sentence on why this line works, or why none does.
+"""
+
+
+QUOTE_TRANSLATE_INSTRUCTION = """Translate a verified pull quote into
+{language_name}.
+
+Source quote (verbatim from the article): {quote}
+Attribution as named in the source: {attribution}
+
+Rules:
+- Translate faithfully. Keep the same claim, tone, and level of certainty.
+  Do not add or remove information, do not smooth it into a slogan, and do
+  not shorten or expand it.
+- If the quote is already in {language_name}, return it unchanged.
+- Keep proper names, place names, and organization names unchanged.
+- Keep every number, date, and unit exactly as in the source.
+- Translate role/title words in the attribution into {language_name}, but
+  keep the person's or document's name as-is. Return null if the source had
+  no attribution.
+- Return JSON matching the requested schema.
+"""
+
+
 EDITORIAL_INSTRUCTION = """Write a single-paragraph editorial (up to 200
 words) for today's edition. Touch on a theme that cuts across the topics
 listed, or pick one standout item and reflect on it plainly.

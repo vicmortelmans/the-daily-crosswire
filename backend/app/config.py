@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     article_max_characters: int = 3000
     article_fetch_concurrency: int = 5
 
+    # Pull-quote picker (the `quote` node, between select and draft).
+    # One pick call per selected story plus one small translation call per
+    # quoted story; both run with this bounded concurrency. Word bounds apply
+    # to the source-language quote before translation.
+    quote_concurrency: int = 3
+    quote_min_words: int = 6
+    quote_max_words: int = 35
+
     issues_dir: Path = Path("/app/issues")
 
     # Comma-separated list of origins the CORS middleware accepts.

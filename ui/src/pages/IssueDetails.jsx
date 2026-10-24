@@ -32,6 +32,7 @@ const PIPELINE_NODES = [
   "dedupe",
   "fetch_articles",
   "select",
+  "quote",
   "draft",
   "critique",
   "editorial",
@@ -713,6 +714,20 @@ export default function IssueDetails() {
                 <EmptyData />
               )}
             </Card>
+            <Card title="Pull quotes">
+              {hasAny(d.quote) ? (
+                <div className="grid grid-cols-3 gap-2">
+                  <Stat label="Quoted" value={d.quote.quoted} />
+                  <Stat label="No quote" value={d.quote.no_quote} />
+                  <Stat label="Unverified" value={d.quote.unverified} />
+                  <Stat label="Translated" value={d.quote.translated} />
+                  <Stat label="Failed" value={d.quote.failed} />
+                  <Stat label="No text" value={d.quote.skipped_no_text} />
+                </div>
+              ) : (
+                <EmptyData />
+              )}
+            </Card>
             <Card title="Draft">
               {hasAny(d.draft) ? (
                 <div className="grid grid-cols-3 gap-4">
@@ -1007,7 +1022,14 @@ function FailedBanner({ details }) {
   );
 }
 
-const NODES_WITH_SUB_DETAIL = new Set(["select", "fetch_articles", "draft", "critique", "editorial"]);
+const NODES_WITH_SUB_DETAIL = new Set([
+  "select",
+  "fetch_articles",
+  "quote",
+  "draft",
+  "critique",
+  "editorial",
+]);
 
 function PipelineProgress({ details, now }) {
   const completed = new Set(details.completed_nodes ?? []);
@@ -1075,6 +1097,7 @@ function PipelineProgress({ details, now }) {
 function NodeSubDetail({ node, progress, now }) {
   if (node === "select") return <SelectProgressDetail progress={progress} now={now} />;
   if (node === "fetch_articles") return <FetchArticlesProgressDetail progress={progress} now={now} />;
+  if (node === "quote") return <QuoteProgressDetail progress={progress} />;
   if (node === "draft") return <DraftProgressDetail progress={progress} now={now} />;
   if (node === "critique") return <CritiqueProgressDetail progress={progress} />;
   if (node === "editorial") return <EditorialProgressDetail progress={progress} now={now} />;
@@ -1106,6 +1129,33 @@ function FetchArticlesProgressDetail({ progress, now }) {
           style={{ width: `${pct}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+function QuoteProgressDetail({ progress }) {
+  const total = progress.stories_total ?? 0;
+  const done = progress.stories_done ?? 0;
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  return (
+    <div className="space-y-1.5 text-xs">
+      <div className="flex items-center justify-between text-neutral-700">
+        <span>
+          Pull quotes: {done}/{total} stories
+        </span>
+        <span className="tabular-nums text-neutral-500">{pct}%</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-sky-100">
+        <div
+          className="h-full bg-sky-500 transition-[width] duration-300"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {progress.current_title && (
+        <div className="truncate text-neutral-600" title={progress.current_title}>
+          {progress.current_title}
+        </div>
+      )}
     </div>
   );
 }

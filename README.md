@@ -46,14 +46,20 @@ a PDF to the list automatically.
      duplicates across batches and picks the most specific item per
      cluster as the survivor; an embedding safety net then runs a cheap
      cosine collapse on title+summary above `SELECT_INTRA_SIM_THRESHOLD`.
-  7. Drafts 100-150 word summaries per story, plus one short editorial.
-  8. Generates a themed puzzles page (sudoku, criss-cross, word search,
+  7. **Picks pull quotes (optional per story).** A separate, focused
+     inference asks for one exact substring of the article (6-35 words) that
+     would work as a pull quote, or `null` when nothing qualifies. The quote
+     is verified character-for-character against the fetched article, then
+     translated into the issue language for print. Unverifiable quotes are
+     dropped; the verified source span stays in `drafts_json` for audit.
+  8. Drafts 100-150 word summaries per story, plus one short editorial.
+  9. Generates a themed puzzles page (sudoku, criss-cross, word search,
      maze, tic-tac-toe, cryptogram). Every puzzle is verified solvable
      before emission.
-  9. Renders the final HTML at `issues/{slug}/index.html` with a print-ready
-     stylesheet, localized to the config's chosen language (date format,
-     masthead strings, editorial label, etc.).
-  10. Mails a PDF of the rendered issue to `config.newsletter_emails` via
+  10. Renders the final HTML at `issues/{slug}/index.html` with a print-ready
+      stylesheet, localized to the config's chosen language (date format,
+      masthead strings, editorial label, etc.).
+  11. Mails a PDF of the rendered issue to `config.newsletter_emails` via
       SMTP. Playwright renders the same HTML through headless Chromium so
       the attachment matches what Cmd+P would save. Runs per recipient so
       per-recipient outcomes are recorded in `meta.notify`. Skipped cleanly
@@ -69,7 +75,8 @@ a PDF to the list automatically.
   HTML report while the agent runs. It is organized by retrieved link and
   shows the full chain: RSS/search input, embedding, cross-issue dedup, full
   article fetch, quality-filter keep/drop motivation, intra-issue dedup,
-  topic cap, draft input/output, and critique rewrites. The report and its
+  topic cap, pull quote pick/verification/translation, draft input/output,
+  and critique rewrites. The report and its
   JSON event ledger live in `issues/{slug}/`; no trace data is stored in
   Postgres. Disable it per config with **Generate workflow report**.
 - **You browse.** The web UI lists past issues with date/config/status

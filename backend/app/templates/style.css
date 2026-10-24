@@ -278,6 +278,25 @@ html, body {
   margin: 1rem 0;
   text-align: center;
 }
+.pullquote cite {
+  display: block;
+  margin-top: 0.45rem;
+  font-family: var(--sans-cond);
+  font-style: normal;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+/* Secondary stories get a quieter quote so the lead keeps the visual weight. */
+.pullquote-compact {
+  font-size: 0.98rem;
+  text-align: left;
+  border-top-width: 1px;
+  border-bottom-width: 1px;
+  padding: 0.55rem 0;
+}
+.pullquote-compact cite { font-size: 0.6rem; }
 
 /* Editorial column */
 .editorial {
@@ -788,6 +807,17 @@ html, body {
     margin: 0.4rem 0;
     break-inside: avoid;
     column-span: none;
+  }
+
+  .pullquote cite {
+    font-size: 0.55rem;
+    margin-top: 0.2rem;
+  }
+
+  .pullquote-compact {
+    font-size: 0.8rem;
+    padding: 0.2rem 0;
+    margin: 0.3rem 0;
   }
 
   .editorial {

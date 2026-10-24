@@ -40,14 +40,14 @@ Foreign keys:
 pgvector indexes: `ivfflat` with `vector_cosine_ops` on both vector
 columns. Uses cosine distance (`<=>`) for similarity queries.
 
-## The agent pipeline (14 nodes)
+## The agent pipeline (15 nodes)
 
 When a config fires (on schedule or from the "Generate now" button) the
 endpoint creates a pending `issues` row, captures its id, and enqueues a
 one-shot APScheduler job pointed at that issue id. The job calls the
 LangGraph graph. Actual execution order after `dedupe` is
-`fetch_articles -> select -> draft`; the descriptions below keep the
-selection and fetch sections together for readability. Nodes in order:
+`fetch_articles -> select -> quote -> draft`; the descriptions below keep
+the selection and fetch sections together for readability. Nodes in order:
 
 1. **`ingest_rss`**: for every topic with RSS feeds, `feedparser.parse`
    the URL (with etag/last-modified for conditional requests). New entries
@@ -120,14 +120,27 @@ selection and fetch sections together for readability. Nodes in order:
    status `fallback_summary` and gracefully falls back to the RSS/search
    snippet.
 
-7. **`draft`**: per selected story, the LLM writes a replacement headline
+7. **`quote`**: picks an optional pull quote for every selected story.
+   Deliberately a separate inference from `draft`: the pick call must return
+   a character-for-character substring of `article_text` (6-35 words, source
+   language), which is verified mechanically against the article after
+   whitespace/typographic normalization. One repair attempt is made when the
+   model paraphrases; a still-unverifiable quote is dropped. Verified quotes
+   then get one small translation call into the config's output language, so
+   the printed quote matches the issue language. A translation that is empty,
+   wildly longer than the source, or loses a digit sequence is rejected and
+   the source-language quote is printed instead. The paper prints `quote`
+   (translated); `quote_source` keeps the verified original for audit in
+   `drafts_json` and the workflow report. Quote failures never drop a story.
+
+8. **`draft`**: per selected story, the LLM writes a replacement headline
    (< 70 chars) and a 100-150 word body in cause-and-effect form in the
    config's configured **output language** (`en`, `es`, `fr`, `it`, `pt`,
    `de`). It operates on the full article text (or fallback summary),
    translating from multilingual sources as needed. Voice rules
    (no hype, no exclamation, no emoji) are enforced by the system prompt.
 
-8. **`critique`**: Python pre-check scans drafts for voice violations:
+9. **`critique`**: Python pre-check scans drafts for voice violations:
    - Exclamation marks and word-count bounds are **language-agnostic**.
    - Hype-word detection uses a per-language list (see
      [backend/app/agent/languages.py](../backend/app/agent/languages.py)).
@@ -138,11 +151,11 @@ selection and fetch sections together for readability. Nodes in order:
    Flagged drafts are sent to the LLM for rewrite; clean drafts skip the
    round-trip. Rewrites stay in the same language as the draft.
 
-9. **`editorial`**: one 200-word editorial drawing from the lead headlines
+10. **`editorial`**: one 200-word editorial drawing from the lead headlines
    across topics, written in the config's output language. Optional;
    skipped if no leads.
 
-10. **`puzzles`**: themed puzzles page. Pool of words derived from the
+11. **`puzzles`**: themed puzzles page. Pool of words derived from the
    drafted article bodies and topic names; passed to
    [backend/app/puzzles/build.py](../backend/app/puzzles/build.py). Six
    puzzles (sudoku, criss-cross fill-in, word search, maze, 4x4 tic-tac-toe,
@@ -150,16 +163,16 @@ selection and fetch sections together for readability. Nodes in order:
    seed derived from `sha256(issue_id | config_id)[:4]` and persisted in
    `drafts_json.puzzles_meta.seed` so re-renders are byte-identical.
 
-11. **`finalize`**: persists the whole pipeline state
+12. **`finalize`**: persists the whole pipeline state
     (`drafts_json = {drafts, editorial, warnings, meta, puzzles_meta}`) on
     the `issues` row and sets `status = drafted` (or `failed` if no drafts
     were produced).
 
-12. **`render`**: renders [issue.html.j2](../backend/app/templates/issue.html.j2)
+13. **`render`**: renders [issue.html.j2](../backend/app/templates/issue.html.j2)
     into `issues/{slug}/index.html`, copies the shared `style.css`, rebuilds
     `story_log` rows with rendered-title embeddings, and marks `status = ready`.
 
-13. **`notify`**: if `config.newsletter_emails` is non-empty and the issue
+14. **`notify`**: if `config.newsletter_emails` is non-empty and the issue
     is `ready`, renders the HTML to PDF via Playwright + headless Chromium
     ([backend/app/services/pdf.py](../backend/app/services/pdf.py)) and
     mails it to every recipient as a multipart/alternative message with
@@ -169,7 +182,7 @@ selection and fetch sections together for readability. Nodes in order:
     published. Per-recipient outcomes and the overall status land in
     `meta.notify`.
 
-14. **`print`**: optional CUPS printer submission if configured. Like
+15. **`print`**: optional CUPS printer submission if configured. Like
     `notify`, a print failure does not flip the issue status.
 
 On an Apple M4 Pro with 48 GB unified RAM running qwen3:14b locally, the

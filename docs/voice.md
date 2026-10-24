@@ -50,7 +50,8 @@ Not:
 The agent works from the titles and summaries SearXNG and RSS hand it.
 It does not add:
 
-- Quotes that aren't in the source.
+- Quotes that aren't in the source. Pull quotes are checked against the
+  fetched article text before they are translated and printed.
 - Statistics that aren't cited.
 - Technical details not supported by the source text.
 - Speculation about motivation or follow-up actions.
