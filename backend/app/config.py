@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 300
     llm_max_retries: int = 3
 
+    # Overall wall-clock budget for one agent run (every node, every retry).
+    # llm_timeout_seconds bounds a single LLM request; select/draft/critique
+    # iterate over many topics/batches, so without this a run can appear to
+    # hang forever. On expiry the issue is marked failed with a clear error.
+    run_timeout_seconds: int = 7200
+
     # Select (quality filter) is called once per topic. When a topic has many
     # candidates after dedup, a single prompt gets huge and the call times
     # out. Instead we split candidates into chunks of this size, call the

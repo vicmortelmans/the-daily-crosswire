@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.agent.runner import run_generation
+from app.agent.worker import agent_worker
 from app.db import get_session
 from app.models import NewsItem
 from app.scheduler import RSS_JOB_ID, scheduler
@@ -52,7 +53,12 @@ class EmbedRequest(BaseModel):
 @router.post("/embed")
 async def debug_embed(payload: EmbedRequest):
     try:
-        vectors = await embeddings.embed(payload.texts)
+        # Embedding clients are bound to the agent worker loop; never call
+        # embeddings.embed() directly on the API loop or the cached httpx
+        # pool will be reused from a different loop.
+        vectors = await agent_worker.run(
+            embeddings.embed(payload.texts), serialize=False
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
@@ -115,6 +121,8 @@ class AgentRunRequest(BaseModel):
 @router.post("/agent")
 async def debug_run_agent(payload: AgentRunRequest):
     try:
-        return await run_generation(payload.config_id)
+        # Keep every agent run on the worker loop that owns the cached LLM
+        # and embedding clients.
+        return await agent_worker.run(run_generation(payload.config_id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

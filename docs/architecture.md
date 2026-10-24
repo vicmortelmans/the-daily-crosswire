@@ -222,6 +222,29 @@ On every backend startup, all `active` configs are re-registered from the
 DB. The source of truth is `newspaper_configs.active`, not whatever the
 jobstore happens to hold.
 
+### Agent worker loop
+
+[backend/app/agent/worker.py](../backend/app/agent/worker.py) owns a single
+long-lived asyncio event loop on a dedicated daemon thread. Scheduler jobs
+(`run_generation_job`, `run_issue_job`), the debug `/api/debug/agent` endpoint,
+and `/api/debug/embed` all submit their coroutine to that loop through
+`agent_worker.run()` / `agent_worker.run_blocking()`.
+
+This matters because langchain/OpenAI clients and the httpx connection pools
+they hold are bound to the event loop that created them. Running each job with
+`asyncio.run()` gave every run a fresh loop and closed it afterwards; the next
+run then reused cached keep-alive connections from the dead loop and failed
+with `RuntimeError: Event loop is closed`. The worker loop starts in the app
+lifespan before the scheduler and is stopped after the scheduler shuts down.
+Runs are serialized on the worker loop (semaphore of 1) so two configs cannot
+interleave and share client state.
+
+A full run is also bounded by `RUN_TIMEOUT_SECONDS` (default 7200) around
+`graph.ainvoke`; expiry marks the issue `failed` with an explicit timeout
+error. Scheduler job wrappers raise `AgentRunFailed` when the issue ends up
+`failed`, so APScheduler records a failed job instead of logging
+"executed successfully".
+
 ## Renderer
 
 [backend/app/services/renderer.py](../backend/app/services/renderer.py)

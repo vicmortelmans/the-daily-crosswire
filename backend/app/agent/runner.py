@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 
 from app.agent.graph import get_graph
 from app.agent.state import AgentState
+from app.agent.worker import agent_worker
 from app.config import settings
 from app.db import engine
 from app.models import Issue, NewspaperConfig, Topic
@@ -15,6 +16,37 @@ from app.services import workflow_report
 from app.utils.time import now_utc
 
 logger = logging.getLogger(__name__)
+
+
+class AgentRunFailed(RuntimeError):
+    """Raised by the scheduler job wrappers when the issue ends up 'failed'.
+
+    `run_issue` deliberately returns a result dict on failure (the HTTP/debug
+    path needs that shape), but APScheduler has to see an exception or it logs
+    the job as successful and monitoring never notices the dead workflow.
+    """
+
+    def __init__(self, message: str, result: dict | None = None):
+        super().__init__(message)
+        self.result = result or {}
+
+
+def _mark_issue_failed(issue_id: uuid.UUID, exc: BaseException) -> None:
+    """Persist failure status + the accumulated meta so the dashboard can
+    still show where the run died."""
+    with Session(engine) as s:
+        issue = s.get(Issue, issue_id)
+        if issue is None:
+            return
+        issue.status = "failed"
+        issue.error = str(exc)[:1000]
+        existing = dict(issue.drafts_json or {})
+        meta = dict(existing.get("meta") or {})
+        meta["failed_at_node"] = meta.get("current_node")
+        meta["error"] = str(exc)[:1000]
+        existing["meta"] = meta
+        issue.drafts_json = existing
+        s.commit()
 
 
 def _slugify(s: str) -> str:
@@ -151,6 +183,7 @@ async def run_issue(issue_id: uuid.UUID) -> dict:
         "dedup_sim_threshold": settings.dedup_sim_threshold,
         "llm_timeout_seconds": settings.llm_timeout_seconds,
         "llm_max_retries": settings.llm_max_retries,
+        "run_timeout_seconds": settings.run_timeout_seconds,
     }
 
     initial: AgentState = {
@@ -180,7 +213,13 @@ async def run_issue(issue_id: uuid.UUID) -> dict:
     try:
         try:
             graph = get_graph()
-            final_state: AgentState = await graph.ainvoke(initial)
+            # Per-call timeouts bound one LLM request; this bounds the whole
+            # workflow so a run that grinds through topic/batch retries cannot
+            # stay "running" forever. On expiry the issue is marked failed.
+            final_state: AgentState = await asyncio.wait_for(
+                graph.ainvoke(initial),
+                timeout=settings.run_timeout_seconds,
+            )
             # The print node's timed wrapper usually writes the final report,
             # but keep this explicit so a custom/truncated graph still gets one.
             final_report = final_state.get("workflow_report")
@@ -191,22 +230,24 @@ async def run_issue(issue_id: uuid.UUID) -> dict:
             ):
                 final_state["workflow_report"] = initial["workflow_report"]
             workflow_report.write_report(final_state, final=True)
+        except asyncio.CancelledError:
+            # Worker shutdown cancels in-flight runs. Mark the issue failed
+            # before re-raising so it does not stay 'running' forever.
+            exc = RuntimeError("agent run cancelled (backend shutting down)")
+            logger.warning("agent graph cancelled for issue %s", issue_id_str)
+            _mark_issue_failed(issue_id, exc)
+            raise
+        except asyncio.TimeoutError:
+            exc = RuntimeError(
+                "agent run exceeded the overall timeout of "
+                f"{settings.run_timeout_seconds}s"
+            )
+            logger.exception("agent graph failed")
+            _mark_issue_failed(issue_id, exc)
+            return {"issue_id": issue_id_str, "status": "failed", "error": str(exc)}
         except Exception as exc:
             logger.exception("agent graph failed")
-            with Session(engine) as s:
-                issue = s.get(Issue, issue_id)
-                if issue is not None:
-                    issue.status = "failed"
-                    issue.error = str(exc)[:1000]
-                    # Preserve the meta we've accumulated so the failed
-                    # dashboard can show where the run died.
-                    existing = dict(issue.drafts_json or {})
-                    meta = dict(existing.get("meta") or {})
-                    meta["failed_at_node"] = meta.get("current_node")
-                    meta["error"] = str(exc)[:1000]
-                    existing["meta"] = meta
-                    issue.drafts_json = existing
-                    s.commit()
+            _mark_issue_failed(issue_id, exc)
             return {"issue_id": issue_id_str, "status": "failed", "error": str(exc)}
     finally:
         try:
@@ -240,24 +281,62 @@ async def run_generation(config_id: uuid.UUID) -> dict:
     return await run_issue(issue_id)
 
 
-def run_generation_sync(config_id_str: str) -> dict:
-    """Synchronous entry point for APScheduler scheduled jobs (interval/cron).
-    Accepts a config_id because APScheduler args are pickled."""
+async def run_generation_job(config_id_str: str) -> dict:
+    """APScheduler scheduled-generation entry point.
+
+    Runs on the app loop and hands the coroutine to the persistent agent
+    worker loop, where every cached LLM/embedding client lives. Raises on
+    failure so APScheduler records the job as failed instead of logging
+    "executed successfully" for a dead workflow.
+    """
     cfg_id = uuid.UUID(config_id_str)
     try:
-        return asyncio.run(run_generation(cfg_id))
+        result = await agent_worker.run(run_generation(cfg_id))
+    except Exception:
+        logger.exception("run_generation_job failed for config %s", cfg_id)
+        raise
+    if result.get("status") == "failed":
+        raise AgentRunFailed(
+            f"agent run failed for config {cfg_id}: {result.get('error')}", result
+        )
+    return result
+
+
+async def run_issue_job(issue_id_str: str) -> dict:
+    """APScheduler manual-run entry point. The endpoint created the Issue up
+    front so the response could include its id; this actually executes it."""
+    issue_id = uuid.UUID(issue_id_str)
+    try:
+        result = await agent_worker.run(run_issue(issue_id))
+    except Exception:
+        logger.exception("run_issue_job failed for issue %s", issue_id)
+        raise
+    if result.get("status") == "failed":
+        raise AgentRunFailed(
+            f"agent run failed for issue {issue_id}: {result.get('error')}", result
+        )
+    return result
+
+
+def run_generation_sync(config_id_str: str) -> dict:
+    """Synchronous entry point for scripts/CLI.
+
+    Delegates to the persistent worker loop instead of `asyncio.run()` so a
+    cached client is never reused from a loop that has already been closed.
+    """
+    cfg_id = uuid.UUID(config_id_str)
+    try:
+        return agent_worker.run_blocking(run_generation(cfg_id))
     except Exception:
         logger.exception("run_generation_sync failed for config %s", cfg_id)
         raise
 
 
 def run_issue_sync(issue_id_str: str) -> dict:
-    """Synchronous entry point for APScheduler manual jobs. The endpoint
-    creates the Issue up front so the response can include the id, then
-    enqueues this function to actually run it."""
+    """Synchronous entry point for scripts/CLI (see run_generation_sync)."""
     issue_id = uuid.UUID(issue_id_str)
     try:
-        return asyncio.run(run_issue(issue_id))
+        return agent_worker.run_blocking(run_issue(issue_id))
     except Exception:
         logger.exception("run_issue_sync failed for issue %s", issue_id)
         raise

@@ -118,7 +118,7 @@ def register_config(config) -> None:
         return
 
     scheduler.add_job(
-        "app.agent.runner:run_generation_sync",
+        "app.agent.runner:run_generation_job",
         trigger=trigger,
         args=[str(config.id)],
         id=job_id,
@@ -142,7 +142,7 @@ def enqueue_manual_run_for_issue(issue_id) -> str:
     response can include its id; this job just executes the graph on it."""
     job_id = f"issue-{issue_id}-manual-{int(now_utc().timestamp())}"
     scheduler.add_job(
-        "app.agent.runner:run_issue_sync",
+        "app.agent.runner:run_issue_job",
         trigger=DateTrigger(run_date=now_utc()),
         args=[str(issue_id)],
         id=job_id,

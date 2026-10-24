@@ -65,6 +65,7 @@ key inline. The important ones:
 | `SELECT_MAX_KEPT_PER_BATCH` | `5`                                         | Hard cap on how many items a single select batch can keep. The prompt asks the LLM to rank best-first; the code slices as a safety net. |
 | `LLM_TIMEOUT_SECONDS`   | `300`                                           | Per-LLM-call runtime timeout (enforced via `asyncio.wait_for`). Some proxies silently hang; SDK-level timeouts alone don't always save you. |
 | `LLM_MAX_RETRIES`       | `3`                                             | Attempts per LLM call before the batch is dropped. Applies to timeout + parse failures. |
+| `RUN_TIMEOUT_SECONDS`   | `7200`                                          | Overall wall-clock budget for one full agent run (all nodes + retries). On expiry the issue is marked `failed` with a timeout error instead of staying `running` forever. |
 | `OLLAMA_API_BASE`       | _(empty)_                                       | Optional: when both this and `OLLAMA_MODEL` are set, the agent switches to `langchain-ollama` native tool calling instead of the OpenAI-compat shim. Should NOT include `/v1`. Example: `http://host.docker.internal:11434`. |
 | `OLLAMA_MODEL`          | _(empty)_                                       | Ollama model tag, e.g. `qwen3:14b`. Only used when `OLLAMA_API_BASE` is also set. |
 | `RSS_POLL_INTERVAL_HOURS` | `1`                                           | How often the global RSS poller runs. etag/modified make repeat polls cheap. |

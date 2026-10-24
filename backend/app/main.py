@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app import scheduler as scheduler_module
+from app.agent.worker import agent_worker
 from app.config import settings
 from app.routers import configs, debug, feeds, issues, topics
 from app.services import log_buffer
@@ -16,9 +17,15 @@ log_buffer.install_root_handler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # The agent worker must start before any job is enqueued: it owns the
+    # long-lived event loop that every cached LLM/embedding client binds to.
+    agent_worker.start()
     scheduler_module.start()
-    yield
-    scheduler_module.shutdown()
+    try:
+        yield
+    finally:
+        scheduler_module.shutdown()
+        agent_worker.shutdown()
 
 
 app = FastAPI(title="Newspaper", lifespan=lifespan)
