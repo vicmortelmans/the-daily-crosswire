@@ -46,6 +46,19 @@ function pickSchedulePayload(s) {
   };
 }
 
+// Empty input means "no cap" (null); otherwise clamp to the API's 1..50
+// range so the form can't send values the backend rejects.
+function parseCap(value) {
+  if (value === "" || value == null) return null;
+  const n = parseInt(value, 10);
+  if (Number.isNaN(n)) return null;
+  return Math.max(1, Math.min(50, n));
+}
+
+function onlyDigits(value) {
+  return String(value).replace(/[^0-9]/g, "");
+}
+
 export default function ConfigEdit() {
   const { id } = useParams();
   const isNew = !id || id === "new";
@@ -84,6 +97,7 @@ function NewConfigForm({ onCreated }) {
   const [includePuzzles, setIncludePuzzles] = useState(true);
   const [includeWorkflowReport, setIncludeWorkflowReport] = useState(true);
   const [language, setLanguage] = useState("en");
+  const [maxStoriesPerTopic, setMaxStoriesPerTopic] = useState("");
   const [error, setError] = useState(null);
   const qc = useQueryClient();
 
@@ -98,11 +112,14 @@ function NewConfigForm({ onCreated }) {
 
   function submit() {
     setError(null);
+    const cap = parseCap(maxStoriesPerTopic);
+    setMaxStoriesPerTopic(cap === null ? "" : String(cap));
     create.mutate({
       name: name.trim(),
       include_puzzles: includePuzzles,
       include_workflow_report: includeWorkflowReport,
       language,
+      max_stories_per_topic: cap,
       ...pickSchedulePayload(schedule),
     });
   }
@@ -150,6 +167,27 @@ function NewConfigForm({ onCreated }) {
             </p>
           </div>
 
+          <div className="space-y-1.5">
+            <Label htmlFor="max-stories-config-new">Default max stories per topic</Label>
+            <Input
+              id="max-stories-config-new"
+              // Deliberately a text input: number inputs can change via
+              // wheel/stepper without ever gaining focus, so their blur
+              // handler never runs and the "unsaved" state gets stuck.
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="No limit"
+              className="max-w-32"
+              value={maxStoriesPerTopic}
+              onChange={(e) => setMaxStoriesPerTopic(onlyDigits(e.target.value))}
+            />
+            <p className="text-xs text-muted-foreground">
+              Config-wide fallback (1-50). A topic's own "Max stories per issue" overrides it; blank
+              means no cap.
+            </p>
+          </div>
+
           <label className="flex items-center gap-2 text-sm text-neutral-800">
             <Checkbox
               checked={includePuzzles}
@@ -194,6 +232,9 @@ function ExistingConfigForm({ config, onSaved, onDeleted }) {
   const [newsletterEmails, setNewsletterEmails] = useState(
     (config.newsletter_emails ?? []).join(", "),
   );
+  const [maxStoriesPerTopic, setMaxStoriesPerTopic] = useState(
+    config.max_stories_per_topic == null ? "" : String(config.max_stories_per_topic),
+  );
   const [error, setError] = useState(null);
 
   // State initializers above pull from `config` on mount. The parent
@@ -224,6 +265,8 @@ function ExistingConfigForm({ config, onSaved, onDeleted }) {
       .split(",")
       .map((e) => e.trim())
       .filter(Boolean);
+    const cap = parseCap(maxStoriesPerTopic);
+    setMaxStoriesPerTopic(cap === null ? "" : String(cap));
     save.mutate({
       name: name.trim(),
       include_puzzles: includePuzzles,
@@ -231,6 +274,7 @@ function ExistingConfigForm({ config, onSaved, onDeleted }) {
       active,
       language,
       newsletter_emails: parsedEmails,
+      max_stories_per_topic: cap,
       ...pickSchedulePayload(schedule),
     });
   }
@@ -302,6 +346,25 @@ function ExistingConfigForm({ config, onSaved, onDeleted }) {
             <p className="text-xs text-muted-foreground">
               Comma-separated. After each successful run, a PDF of the issue is emailed to this
               list. Leave empty to disable delivery for this config.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="max-stories-config">Default max stories per topic</Label>
+            <Input
+              id="max-stories-config"
+              // Text, not number: see the TopicRow cap field note.
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="No limit"
+              className="max-w-32"
+              value={maxStoriesPerTopic}
+              onChange={(e) => setMaxStoriesPerTopic(onlyDigits(e.target.value))}
+            />
+            <p className="text-xs text-muted-foreground">
+              Config-wide fallback (1-50). A topic's own "Max stories per issue" overrides it; blank
+              means no cap.
             </p>
           </div>
 
@@ -494,7 +557,12 @@ function TopicsSection({ config }) {
         ) : (
           <div className="space-y-3">
             {config.topics.map((t) => (
-              <TopicRow key={t.id} topic={t} onChange={refetch} />
+              <TopicRow
+                key={t.id}
+                topic={t}
+                onChange={refetch}
+                defaultCap={config.max_stories_per_topic}
+              />
             ))}
           </div>
         )}
@@ -503,10 +571,13 @@ function TopicsSection({ config }) {
   );
 }
 
-function TopicRow({ topic, onChange }) {
+function TopicRow({ topic, onChange, defaultCap }) {
   const [name, setName] = useState(topic.name);
   const [sourcesText, setSourcesText] = useState(topic.preferred_sources.join(", "));
   const [hints, setHints] = useState(topic.search_hints ?? "");
+  const [maxStories, setMaxStories] = useState(
+    topic.max_stories == null ? "" : String(topic.max_stories),
+  );
   const [feedUrl, setFeedUrl] = useState("");
   const [dirty, setDirty] = useState(false);
 
@@ -525,6 +596,11 @@ function TopicRow({ topic, onChange }) {
 
   function persist() {
     if (!dirty) return;
+    const cap = parseCap(maxStories);
+    // Reflect the clamped/cleared value in the input immediately: the API
+    // caps at 1..50, and TopicRow deliberately does not resync from props.
+    const normalized = cap === null ? "" : String(cap);
+    if (normalized !== String(maxStories)) setMaxStories(normalized);
     save.mutate({
       name: name.trim(),
       preferred_sources: sourcesText
@@ -532,12 +608,13 @@ function TopicRow({ topic, onChange }) {
         .map((s) => s.trim())
         .filter(Boolean),
       search_hints: hints || null,
+      max_stories: cap,
     });
   }
 
-  function markDirty(setter) {
+  function markDirty(setter, transform) {
     return (e) => {
-      setter(e.target.value);
+      setter(transform ? transform(e.target.value) : e.target.value);
       setDirty(true);
     };
   }
@@ -602,6 +679,29 @@ function TopicRow({ topic, onChange }) {
           onChange={markDirty(setHints)}
           onBlur={persist}
         />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor={`max-stories-${topic.id}`}>Max stories per issue</Label>
+        <Input
+          id={`max-stories-${topic.id}`}
+          // Text, not number: a number input can be changed with the mouse
+          // wheel or its stepper without ever gaining focus, so onBlur never
+          // fires and the row stays "unsaved" until another field is blurred.
+          // Text inputs must be focused to change, matching the other fields.
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder={defaultCap ? `Inherit config default (${defaultCap})` : "No limit"}
+          className="max-w-32"
+          value={maxStories}
+          onChange={markDirty(setMaxStories, onlyDigits)}
+          onBlur={persist}
+        />
+        <p className="text-xs text-muted-foreground">
+          Cap on how many stories this topic can contribute to one issue (1-50). Blank{" "}
+          {defaultCap ? `inherits the config default of ${defaultCap}` : "means no cap"}.
+        </p>
       </div>
 
       <div className="space-y-1.5">

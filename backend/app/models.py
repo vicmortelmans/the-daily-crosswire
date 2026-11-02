@@ -27,6 +27,9 @@ class NewspaperConfig(SQLModel, table=True):
     run_hour: int = Field(default=6)
     include_puzzles: bool = Field(default=True)
     active: bool = Field(default=True)
+    # Optional config-wide default cap on how many stories each topic may
+    # contribute to one issue. A Topic.max_stories value overrides it; null
+    # on both means no cap.
     max_stories_per_topic: Optional[int] = Field(default=None)
     # ISO 639-1 code: "en", "es", "fr", "it", "pt", "de", "nl". Drives draft +
     # editorial output language and template string localization.
@@ -47,7 +50,10 @@ class NewspaperConfig(SQLModel, table=True):
 
     topics: list["Topic"] = Relationship(
         back_populates="config",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "order_by": "Topic.created_at, Topic.id",
+        },
     )
     issues: list["Issue"] = Relationship(
         back_populates="config",
@@ -66,6 +72,13 @@ class Topic(SQLModel, table=True):
         sa_column=Column(ARRAY(sa.String), nullable=False, server_default="{}"),
     )
     search_hints: Optional[str] = Field(default=None)
+    # Hard cap on how many stories this topic may contribute to one issue.
+    # None = no topic-specific cap; the select node falls back to the
+    # config-wide NewspaperConfig.max_stories_per_topic (if set).
+    max_stories: Optional[int] = Field(default=None)
+    # Stable ordering key. Created once and never modified by updates, so
+    # editing a topic cannot move it around in the UI or rendered issue.
+    created_at: datetime = Field(default_factory=now_utc, sa_type=sa.DateTime(timezone=False))
 
     config: Optional[NewspaperConfig] = Relationship(back_populates="topics")
     feeds: list["RSSFeed"] = Relationship(

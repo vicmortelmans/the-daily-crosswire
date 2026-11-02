@@ -26,6 +26,7 @@ class TopicRead(BaseModel):
     name: str
     preferred_sources: list[str] = []
     search_hints: Optional[str] = None
+    max_stories: Optional[int] = None
     feeds: list[FeedRead] = []
 
 
@@ -33,12 +34,14 @@ class TopicCreate(BaseModel):
     name: str = Field(min_length=1)
     preferred_sources: list[str] = []
     search_hints: Optional[str] = None
+    max_stories: Optional[int] = Field(default=None, ge=1, le=50)
 
 
 class TopicUpdate(BaseModel):
     name: Optional[str] = None
     preferred_sources: Optional[list[str]] = None
     search_hints: Optional[str] = None
+    max_stories: Optional[int] = Field(default=None, ge=1, le=50)
 
 
 ScheduleKind = Literal["interval", "weekdays"]

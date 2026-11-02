@@ -39,6 +39,7 @@ from app.services import searxng as searxng_service
 from app.services import workflow_report as report_service
 from app.services.rss import normalize_title, poll_feed
 from app.agent import prompts
+from app.agent.caps import cap_reason, effective_topic_cap
 from app.agent.checkpoint import checkpoint_meta
 from app.agent.languages import hype_words, language_name
 from app.agent.llm import (
@@ -914,7 +915,9 @@ async def select_stories(state: AgentState) -> AgentState:
 
     with Session(engine) as s:
         topics = s.exec(
-            select(Topic).where(Topic.id.in_([_uuid(t) for t in state["topic_ids"]]))
+            select(Topic)
+            .where(Topic.id.in_([_uuid(t) for t in state["topic_ids"]]))
+            .order_by(Topic.created_at, Topic.id)
         ).all()
         kept_ids = set(state.get("kept_ids", []))
         config = s.get(NewspaperConfig, _uuid(state["config_id"]))
@@ -1327,14 +1330,17 @@ async def select_stories(state: AgentState) -> AgentState:
             if lead and lead not in keep_ordered:
                 lead = keep_ordered[0] if keep_ordered else None
 
-            # Optional per-config hard cap on how many stories actually
-            # make it to draft for this topic.
-            if config and config.max_stories_per_topic:
-                trimmed = keep_ordered[config.max_stories_per_topic :]
-                keep_ordered = keep_ordered[: config.max_stories_per_topic]
+            # Optional hard cap on how many stories actually make it to
+            # draft for this topic. Topic.max_stories wins; otherwise the
+            # config-wide NewspaperConfig.max_stories_per_topic default
+            # applies. Null on both means no cap.
+            cap, cap_source = effective_topic_cap(topic, config)
+            if cap:
+                trimmed = keep_ordered[cap:]
+                keep_ordered = keep_ordered[:cap]
+                reason = cap_reason(cap, cap_source)
                 for nid in trimmed:
                     n = dedup_by_id.get(nid)
-                    reason = f"exceeded max_stories_per_topic={config.max_stories_per_topic}"
                     _record_drop(
                         state,
                         news_item_id=nid,
@@ -1352,7 +1358,7 @@ async def select_stories(state: AgentState) -> AgentState:
                         topic_name=topic.name,
                         reason=reason,
                         reason_source="system",
-                        data={"max_stories_per_topic": config.max_stories_per_topic},
+                        data={"max_stories": cap, "cap_source": cap_source},
                     )
                 if lead and lead not in keep_ordered:
                     lead = keep_ordered[0] if keep_ordered else None
@@ -1370,6 +1376,8 @@ async def select_stories(state: AgentState) -> AgentState:
                 "kept": len(keep_ordered),
                 "collapsed_total": before_count - len(keep_ordered),
                 "has_lead": bool(lead),
+                "cap": cap,
+                "cap_source": cap_source,
             }
 
             topic_elapsed_ms = int((time.perf_counter() - topic_t0) * 1000)
@@ -1416,21 +1424,58 @@ async def select_stories(state: AgentState) -> AgentState:
 
 def _select_passthrough(state: AgentState) -> AgentState:
     """When the LLM isn't available, keep everything dedupe produced and
-    pick the first per topic as the lead."""
+    pick the first per topic as the lead. The per-topic cap still applies."""
     selected_by_topic: dict[str, list[str]] = {}
     lead_by_topic: dict[str, str] = {}
     with Session(engine) as s:
+        config_id = _uuid(state["config_id"])
+        config = s.get(NewspaperConfig, config_id)
         kept_ids = state.get("kept_ids", [])
         if kept_ids:
             kept_items = s.exec(
                 select(NewsItem).where(NewsItem.id.in_([_uuid(i) for i in kept_ids]))
             ).all()
+            items_by_id = {str(item.id): item for item in kept_items}
+            topics_by_id = {
+                str(t.id): t
+                for t in s.exec(
+                    select(Topic)
+                    .where(Topic.config_id == config_id)
+                    .order_by(Topic.created_at, Topic.id)
+                ).all()
+            }
             for item in kept_items:
                 if item.topic_id is None:
                     continue
                 tid = str(item.topic_id)
                 selected_by_topic.setdefault(tid, []).append(str(item.id))
-            for tid, ids in selected_by_topic.items():
+            for tid, ids in list(selected_by_topic.items()):
+                cap, cap_source = effective_topic_cap(topics_by_id.get(tid), config)
+                if cap and len(ids) > cap:
+                    trimmed = ids[cap:]
+                    ids = ids[:cap]
+                    selected_by_topic[tid] = ids
+                    reason = cap_reason(cap, cap_source)
+                    for nid in trimmed:
+                        n = items_by_id.get(nid)
+                        _record_drop(
+                            state,
+                            news_item_id=nid,
+                            stage="select_topic_cap",
+                            topic_id=tid,
+                            reason=reason,
+                            snapshot=_snapshot_news_item(n) if n else None,
+                        )
+                        report_service.record_event(
+                            state,
+                            news_item_id=nid,
+                            step="topic_cap",
+                            status="dropped",
+                            topic_id=tid,
+                            reason=reason,
+                            reason_source="system",
+                            data={"max_stories": cap, "cap_source": cap_source},
+                        )
                 lead_by_topic[tid] = ids[0]
                 for nid in ids:
                     report_service.record_event(
@@ -1439,7 +1484,7 @@ def _select_passthrough(state: AgentState) -> AgentState:
                         step="select",
                         status="kept",
                         topic_id=tid,
-                        reason="Chat LLM not configured; passthrough kept all candidates.",
+                        reason="Chat LLM not configured; passthrough kept this candidate.",
                         reason_source="system",
                     )
     state["selected_by_topic"] = selected_by_topic

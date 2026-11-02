@@ -39,9 +39,10 @@ class Settings(BaseSettings):
 
     # Hard cap on how many items the LLM is allowed to keep PER BATCH.
     # With select_batch_size=10 and this at 5, no batch can contribute more
-    # than half its items. Different from the per-topic cap on NewspaperConfig
-    # which trims after all batches merge; this one bounds each chunk at the
-    # source so one batch can't flood the selection.
+    # than half its items. Different from the per-topic cap
+    # (Topic.max_stories, falling back to NewspaperConfig.max_stories_per_topic)
+    # which trims after all batches merge and dedup runs; this one bounds each
+    # chunk at the source so one batch can't flood the selection.
     select_max_kept_per_batch: int = 5
 
     # Intra-issue near-dup collapse threshold. Separate from dedup_sim_threshold

@@ -198,6 +198,9 @@ Existing stories will be re-embedded on the next agent run.
 5. Save. Then add one or more **Topics**. For each topic:
    - Optionally add domain filters (`arxiv.org`, `theverge.com`).
    - Optionally add search hints (free text, e.g. "prefer academic coverage").
+   - Optionally set **Max stories per issue** to cap how many stories this
+     topic contributes to one issue (blank falls back to the config-wide
+     default, or no cap if that is blank too).
    - Optionally add RSS feed URLs. Topics without feeds will use SearXNG.
 6. Back on the config page, click **Generate now**. On an Apple M4 Pro
    with 48 GB unified RAM the run takes 15-30 minutes depending on LLM

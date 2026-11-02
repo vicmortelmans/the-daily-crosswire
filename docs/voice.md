@@ -138,8 +138,9 @@ Add entries to the language you want to tighten.
 
 - **Fixed page count.** The paper scales with how much content survived
   dedup; some days are shorter, some longer.
-- **Fixed story count per topic.** The LLM decides. Clip with
-  `NewspaperConfig.max_stories_per_topic` (null = no cap) if one topic
+- **Fixed story count per topic.** The LLM decides. Clip per topic with
+  `Topic.max_stories`, or set the config-wide fallback
+  `NewspaperConfig.max_stories_per_topic` (null = no cap), if one topic
   goes rogue.
 - **Neutral tone on every piece.** The editorial is allowed a point of
   view, just an earned one.

@@ -22,8 +22,8 @@ generated newspaper HTML as static files; the UI iframes it for preview.
 
 | Table                | What it holds                                                             |
 | -------------------- | ------------------------------------------------------------------------- |
-| `newspaper_configs`  | User-defined "newspapers": name, schedule, topics, active flag, optional max-stories-per-topic cap, `include_workflow_report` (write the optional per-article HTML report), plus `newsletter_emails` (list of recipient addresses for automatic delivery after each run). |
-| `topics`             | Beats attached to a config: name, preferred domains, free-text search hints. |
+| `newspaper_configs`  | User-defined "newspapers": name, schedule, topics, active flag, optional config-wide max-stories-per-topic default, `include_workflow_report` (write the optional per-article HTML report), plus `newsletter_emails` (list of recipient addresses for automatic delivery after each run). |
+| `topics`             | Beats attached to a config: name, preferred domains, free-text search hints, optional per-topic `max_stories` cap. Ordered by `created_at` so editing a topic never reorders the list. |
 | `rss_feeds`          | Per-topic RSS URLs, with etag + last-modified for cheap conditional polls. |
 | `news_items`         | Ingested stories (URL-unique). Title, summary, `source_domain`, `topic_id`, `embedding vector(768)`. Also captures how the item was discovered: `ingested_via` (`'rss'` or `'searxng'`), `source_feed_url` (when from a feed), `source_query` (when from web search). Legacy rows pre-source-tracking have these as null. |
 | `issues`             | One generated newspaper: status, slug, issue_date, lookback window, html_path, `drafts_json` (full pipeline state). |
@@ -106,8 +106,10 @@ the selection and fetch sections together for readability. Nodes in order:
       `SELECT_INTRA_SIM_THRESHOLD` (default 0.75). Cheap, catches anything
       the LLM missed.
 
-   Finally, if the config has `max_stories_per_topic` set, the surviving
-   list is clipped; otherwise the full list passes through.
+   Finally, if the topic has `Topic.max_stories` set, the surviving list is
+   clipped to that number; otherwise the config-wide
+   `NewspaperConfig.max_stories_per_topic` default applies (when set). Null
+   on both means no cap.
 
 6. **`fetch_articles`**: retrieves full article text for every candidate
    that survived cross-issue dedup, before the quality filter runs. Uses
@@ -452,7 +454,7 @@ Stages and their reason sources:
 | `select_cap`            | LLM kept but trimmed to `SELECT_MAX_KEPT_PER_BATCH`                           | synthesized        |
 | `intra_dedup_llm`       | intra-issue dedup pass 1 (LLM clustering)                                     | **LLM's `drop_reasons`** |
 | `intra_dedup_emb`       | intra-issue dedup pass 2 (embedding safety net)                               | synthesized with sim score + kept id |
-| `select_topic_cap`      | `config.max_stories_per_topic` trimmed it                                     | synthesized        |
+| `select_topic_cap`      | `Topic.max_stories` (or the config-wide fallback) trimmed it                  | synthesized        |
 
 The inline `snapshot` means a drop entry stays readable in the dashboard
 even after a cleanup job deletes the `news_items` row it references.

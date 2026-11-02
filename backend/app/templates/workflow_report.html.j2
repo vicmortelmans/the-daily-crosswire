@@ -213,7 +213,7 @@
       {% if d.similarity is defined and d.similarity is not none %}<div class="note">Similarity: {{ "%.3f"|format(d.similarity) }}{% if d.matched_title %} · {{ d.matched_title }}{% endif %}</div>{% endif %}
       {% if d.matched_kept_id %}<div class="note">Matched kept item: <span style="font-family:ui-monospace,monospace">{{ d.matched_kept_id }}</span></div>{% endif %}
       {% if d.max_kept_per_batch %}<div class="note">Per-batch limit: {{ d.max_kept_per_batch }}</div>{% endif %}
-      {% if d.max_stories_per_topic %}<div class="note">Limit: {{ d.max_stories_per_topic }}</div>{% endif %}
+      {% if d.max_stories %}<div class="note">Per-topic limit: {{ d.max_stories }}{% if d.cap_source %} (source: {{ d.cap_source }}){% endif %}</div>{% endif %}
       {% if d.lookback_start %}<div class="note">Window starts: {{ d.lookback_start }}</div>{% endif %}
     {% elif step.step == "embedded" %}
       {% if d.model %}<div class="note">Model: {{ d.model }}</div>{% endif %}

@@ -95,7 +95,9 @@ def create_pending_issue(config_id: uuid.UUID) -> uuid.UUID:
         config = s.get(NewspaperConfig, config_id)
         if config is None:
             raise ValueError(f"config {config_id} not found")
-        topics = s.exec(select(Topic).where(Topic.config_id == config.id)).all()
+        topics = s.exec(
+            select(Topic).where(Topic.config_id == config.id).order_by(Topic.created_at, Topic.id)
+        ).all()
         if not topics:
             raise ValueError(f"config {config_id} has no topics")
 
@@ -132,7 +134,9 @@ async def run_issue(issue_id: uuid.UUID) -> dict:
         config = s.get(NewspaperConfig, issue.config_id)
         if config is None:
             raise ValueError(f"config {issue.config_id} not found for issue {issue_id}")
-        topics = s.exec(select(Topic).where(Topic.config_id == config.id)).all()
+        topics = s.exec(
+            select(Topic).where(Topic.config_id == config.id).order_by(Topic.created_at, Topic.id)
+        ).all()
         issue.status = "running"
         s.add(issue)
         s.commit()

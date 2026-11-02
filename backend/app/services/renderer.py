@@ -137,7 +137,11 @@ async def render_issue(issue_id: uuid.UUID) -> tuple[Path, dict[str, Any]]:
             raise ValueError(f"issue {issue_id} has no drafts_json (was the agent run?)")
 
         config = s.get(NewspaperConfig, issue.config_id)
-        topics = s.exec(select(Topic).where(Topic.config_id == issue.config_id)).all()
+        topics = s.exec(
+            select(Topic)
+            .where(Topic.config_id == issue.config_id)
+            .order_by(Topic.created_at, Topic.id)
+        ).all()
 
         drafts = issue.drafts_json.get("drafts", [])
         logger.info("DEBUG renderer.py drafts %s", drafts)

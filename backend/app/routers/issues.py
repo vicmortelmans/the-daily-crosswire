@@ -100,7 +100,9 @@ def get_issue_details(
     editorial_text = drafts_json.get("editorial")
     puzzles_meta = drafts_json.get("puzzles_meta") or {}
 
-    topics = session.exec(select(Topic).where(Topic.config_id == issue.config_id)).all()
+    topics = session.exec(
+        select(Topic).where(Topic.config_id == issue.config_id).order_by(Topic.created_at, Topic.id)
+    ).all()
     topic_name_by_id = {str(t.id): t.name for t in topics}
 
     raw_drops = meta.get("drop_trace") or []

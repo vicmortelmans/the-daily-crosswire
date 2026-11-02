@@ -24,9 +24,9 @@ a PDF to the list automatically.
 
 - **You configure newspapers.** Each has a schedule (every N days, or
   specific weekdays), a set of topics, per-topic preferred sources, free-text
-  search hints, optional RSS feeds, and an **output language** (EN / ES /
-  FR / IT / PT / DE). The agent translates multilingual sources into the
-  chosen language at draft time.
+  search hints, optional per-topic story caps, optional RSS feeds, and an
+  **output language** (EN / ES / FR / IT / PT / DE). The agent translates
+  multilingual sources into the chosen language at draft time.
 - **On schedule (or manual trigger), the agent runs:**
   1. Polls RSS feeds for every topic that has any.
   2. Falls back to SearXNG web search for topics with no feeds or too few
